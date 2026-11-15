@@ -1,4 +1,4 @@
-const YEARS=[2021,2022,2023,2024,2025];
+let YEARS=[2021,2022,2023,2024,2025];
 const FIELDS=[
  ["ca","Chiffre d'affaires"],["cogs","Coût des ventes"],["sga","Frais commerciaux et généraux"],["dep","Dotations aux amortissements"],
  ["ebit","Résultat d'exploitation (EBIT)"],["interest","Charges d'intérêts"],["net","Résultat net"],["cfo","Flux de trésorerie d'exploitation"],
@@ -39,12 +39,18 @@ const EXAMPLE={
   hyp:{rawShare:.20,pass:.50,salesFx:-.60,costFx:-.40,co2:26.6,co2exp:.23,eur:1.08,debt:19598,float:.10,sea:.20,tax:.21}}
 };
 
+
+EXAMPLE.snep.sector="Chimie (PVC, électrolyse)";EXAMPLE.arkema.sector="Chimie de spécialités";EXAMPLE.dow.sector="Chimie de base";
+EXAMPLE.snep.env={eco:"Surcapacité mondiale de PVC et importations à bas prix ; nouvelles unités (90 000 t de PVC) encore en stabilisation ; approvisionnement en éthylène perturbé.",reg:"Droits antidumping sur le PVC américain (24,88 %) et égyptien (jusqu'à 92,19 %).",geo:"Éthylène importé par voie maritime ; prix fixés sur le marché mondial ; protection dépendante de décisions publiques révisables.",audit:"Continuité d'exploitation"};
+EXAMPLE.arkema.env={eco:"Demande faible aux États-Unis et en Europe ; cycle bas des acryliques ; dollar faible (effet change −2,9 % sur les ventes 2025).",reg:"PFAS à Pierre-Bénite (site Seveso seuil haut), assignation en justice de janvier 2026 ; quotas carbone européens.",geo:"Un tiers des ventes en Amérique du Nord ; investissements en Chine.",audit:"Provisions et litiges environnementaux"};
+EXAMPLE.dow.env={eco:"Surcapacités en Asie et en Europe ; marges au plus bas ; dividende réduit de 50 %, projet Path2Zero reporté de deux ans.",reg:"Fermeture de trois actifs européens ; 23 % des émissions directes sous quotas européens ; restructuration de 1,1 à 1,5 Md$.",geo:"60 % des ventes hors États-Unis et Canada ; coentreprises au Moyen-Orient (Sadara, EQUATE).",audit:"Restructuration et dépréciations"};
+EXAMPLE.snep.src=["Comptes sociaux publiés sur le site de l'AMMC : états financiers 2021, 2022, 2025 et rapport financier annuel 2024 (snep.ma).", "Coût des ventes = achats consommés de matières et fournitures. Frais généraux = autres charges externes + impôts et taxes + charges de personnel. Passif circulant = dettes du passif circulant + trésorerie-passif (et provisions). Actif circulant 2022 estimé. Flux d'exploitation estimés : résultat net + dotations − variation (clients + stocks) + variation des dettes circulantes ; 2021 sans la variation des dettes."];EXAMPLE.arkema.src=["Communiqués de résultats annuels (Business Wire), données S&amp;P Global reprises par stockanalysis.com et abcbourse.com.", "Résultat d'exploitation IFRS publié (2021 gonflé par la cession du PMMA). Charges d'intérêts = résultat financier. Réserves = « primes et réserves ». Capitaux propres y compris minoritaires."];EXAMPLE.dow.src=["Rapports 10-K (SEC) via edgar.tools, stockanalysis.com, kalkinemedia.com et barchart.com.", "Résultat d'exploitation calculé par S&amp;P. Résultat net part du groupe. Flux d'exploitation totaux. Capitaux propres y compris minoritaires."];
 const PALETTE=["#0F8B8D","#3F5FD8","#8E44AD","#C2410C","#2F7D32","#B0306A","#7A5C00","#1F6F9F"];
-const STORE="riskscope-fidex5-v1";
+const STORE="riskscope-fidex5-v2";
 const clone=o=>JSON.parse(JSON.stringify(o));
-function fresh(){const s={cos:clone(EXAMPLE),order:["snep","arkema","dow"],isExample:true};s.order.forEach((k,i)=>s.cos[k].color=PALETTE[i]);return s;}
+function fresh(){return{cos:{},order:[]};}
 let state;
-try{const s=JSON.parse(localStorage.getItem(STORE)||"null");state=s&&s.cos&&s.order?s:null;}catch(e){state=null;}
+try{const s=JSON.parse(localStorage.getItem(STORE)||"null");state=s&&s.cos&&s.order?s:null;if(state)state.order=state.order.filter(k=>state.cos[k]);}catch(e){state=null;}
 if(!state) state=fresh();
 document.documentElement.style.setProperty("--c1",PALETTE[0]);document.documentElement.style.setProperty("--c2",PALETTE[1]);document.documentElement.style.setProperty("--c3",PALETTE[2]);
 let scen={oil:0,fx:0,demand:0,log:0,carbon:0,rate:0};
@@ -191,19 +197,21 @@ function renderSliders(){
 function updateStress(){renderStress();renderOverview();renderMatrix();renderPlan();renderRatios();if(document.getElementById("view-mission").classList.contains("active"))renderMission();}
 const NAMES={oil:"Pétrole",fx:"Change",demand:"Demande",log:"Fret",carbon:"Carbone",rate:"Taux"};
 function renderData(){
-  if(!state.cos[ui.dataCo])ui.dataCo=keys()[0];
+  if(!keys().length)return;
+  if(!keys().includes(ui.dataCo))ui.dataCo=keys()[0];
   const seg=document.getElementById("data-co");
   seg.innerHTML=keys().map(k=>`<button aria-pressed="${ui.dataCo===k}" data-k="${k}">${esc(state.cos[k].name)}</button>`).join("");
   seg.querySelectorAll("button").forEach(b=>b.onclick=()=>{ui.dataCo=b.dataset.k;renderData();});
   const co=state.cos[ui.dataCo];
   document.getElementById("data-title").textContent=`Comptes de ${co.name} (${co.cur})`;
-  const del=document.getElementById("del-co");del.hidden=!co.custom;
+  const sc=document.getElementById("src-card");sc.hidden=!co.src;if(co.src)document.getElementById("src-body").innerHTML=`<p><b>Sources :</b> ${co.src[0]}</p><p class="small" style="margin-top:6px"><b>Retraitements :</b> ${co.src[1]}</p><p class="small">À vérifier dans les rapports annuels originaux.</p>`;
+  const del=document.getElementById("del-co");del.hidden=STOREX.mode==="db"&&STOREX.canWrite===false;
   del.onclick=()=>{if(del.dataset.confirm!=="1"){del.dataset.confirm="1";del.textContent="Confirmer la suppression";setTimeout(()=>{del.dataset.confirm="";del.textContent="Supprimer cette société";},4000);return;}
-    const k=ui.dataCo;delete state.cos[k];state.order=state.order.filter(x=>x!==k);save();del.dataset.confirm="";del.textContent="Supprimer cette société";refreshAll();};
+    const k=ui.dataCo;del.dataset.confirm="";del.textContent="Supprimer cette société";deleteCo(k);};
   document.getElementById("data-table").innerHTML=`<thead><tr><th>Poste (${esc(co.cur)})</th>${YEARS.map(y=>`<th class="n">${y}</th>`).join("")}</tr></thead><tbody>${FIELDS.map(([k,l])=>`<tr><td>${l}</td>${YEARS.map((y,t)=>`<td><input id="d-${k}-${t}" inputmode="decimal" value="${co.data[k][t]}" aria-label="${esc(l)} ${y}"></td>`).join("")}</tr>`).join("")}</tbody>`;
-  document.querySelectorAll("#data-table input").forEach(inp=>inp.onchange=()=>{const[,k,t]=inp.id.split("-");const v=parseNum(inp.value);if(isFinite(v)){co.data[k][+t]=v;if(!co.custom)state.isExample=false;save();refreshAll();}else inp.value=co.data[k][+t];});
+  document.querySelectorAll("#data-table input").forEach(inp=>inp.onchange=()=>{const[,k,t]=inp.id.split("-");const v=parseNum(inp.value);if(isFinite(v)){co.data[k][+t]=v;saveCo(ui.dataCo);refreshAll();}else inp.value=co.data[k][+t];});
   document.getElementById("hyp-table").innerHTML=`<thead><tr><th>Hypothèse</th><th class="n">Valeur</th></tr></thead><tbody>${HYP.map(([k,l,u])=>`<tr><td>${l}${u==="pct"?" <span class='small'>(%)</span>":""}</td><td style="width:120px"><input id="h-${k}" inputmode="decimal" value="${co.hyp[k]==null?"":u==="pct"?+(co.hyp[k]*100).toFixed(1):co.hyp[k]}" aria-label="${esc(l)}"></td></tr>`).join("")}</tbody>`;
-  document.querySelectorAll("#hyp-table input").forEach(inp=>inp.onchange=()=>{const k=inp.id.slice(2);const u=HYP.find(h=>h[0]===k)[2];const v=parseNum(inp.value);if(isFinite(v)){co.hyp[k]=u==="pct"?v/100:v;save();refreshAll();}else if(k==="debt"&&inp.value.trim()===""){co.hyp.debt=null;save();refreshAll();}});
+  document.querySelectorAll("#hyp-table input").forEach(inp=>inp.onchange=()=>{const k=inp.id.slice(2);const u=HYP.find(h=>h[0]===k)[2];const v=parseNum(inp.value);if(isFinite(v)){co.hyp[k]=u==="pct"?v/100:v;saveCo(ui.dataCo);refreshAll();}else if(k==="debt"&&inp.value.trim()===""){co.hyp.debt=null;saveCo(ui.dataCo);refreshAll();}});
 }
 function renderPdfSelect(){
   const s=document.getElementById("pdf-co");const cur=s.value;
@@ -212,24 +220,31 @@ function renderPdfSelect(){
 }
 function setupDataTools(){
   const msg=t=>{const m=document.getElementById("data-msg");m.textContent=t;setTimeout(()=>{if(m.textContent===t)m.textContent="";},4000);};
-  document.getElementById("copy-json").onclick=async()=>{const t=JSON.stringify({cos:state.cos,order:state.order,mission:state.mission,team:state.team,phases:state.phases});try{await navigator.clipboard.writeText(t);msg("Données copiées. Collez-les dans un message au groupe.");}catch(e){document.getElementById("json-area").value=t;msg("Copie impossible ici : le texte est dans la zone ci-dessous.");}};
-  document.getElementById("import-json").onclick=()=>{try{const o=JSON.parse(document.getElementById("json-area").value);const cos=o.cos||o;const order=o.order||Object.keys(cos);if(!order.every(k=>cos[k]&&cos[k].data&&cos[k].hyp))throw 0;order.forEach((k,i)=>{if(!cos[k].color)cos[k].color=PALETTE[i%PALETTE.length];});state={cos,order,isExample:false,mission:o.mission,team:o.team,phases:o.phases};save();refreshAll();msg("Données importées.");}catch(e){msg("Texte non reconnu : collez exactement le texte copié avec le bouton « Copier ».");}};
-  document.getElementById("reset-data").onclick=()=>{state=fresh();save();ui.dataCo="snep";refreshAll();msg("Chiffres publiés rétablis (les sociétés ajoutées sont retirées).");};
+  document.getElementById("copy-json").onclick=async()=>{const t=JSON.stringify({cos:state.cos,order:state.order,team:state.team,phases:state.phases});try{await navigator.clipboard.writeText(t);msg("Données copiées. Collez-les dans un message au groupe.");}catch(e){document.getElementById("json-area").value=t;msg("Copie impossible ici : le texte est dans la zone ci-dessous.");}};
+  document.getElementById("import-json").onclick=()=>{try{const o=JSON.parse(document.getElementById("json-area").value);const cos=o.cos||o;const order=o.order||Object.keys(cos);if(!order.every(k=>cos[k]&&cos[k].data&&cos[k].hyp))throw 0;order.forEach((k,i)=>{if(!cos[k].color)cos[k].color=PALETTE[i%PALETTE.length];});Object.entries(cos).forEach(([k,c])=>{state.cos[k]=c;saveCo(k);});if(o.team)state.team=o.team;if(o.phases)state.phases=o.phases;state.order=order.filter(k=>state.cos[k]);save();refreshAll();msg("Analyses importées dans l'historique.");}catch(e){msg("Texte non reconnu : collez exactement le texte copié avec le bouton « Copier ».");}};
+  document.getElementById("reset-data").onclick=()=>{loadExample("all");location.hash="#accueil";};
 }
 
 /* ---------- Nouvelle société ---------- */
 const dlg=document.getElementById("new-dlg");
-function nfTable(){
-  document.getElementById("nf-table").innerHTML=`<thead><tr><th>Poste (millions)</th>${YEARS.map(y=>`<th class="n">${y}</th>`).join("")}</tr></thead><tbody>${FIELDS.map(([k,l])=>`<tr><td>${l}</td>${YEARS.map((y,t)=>`<td><input id="nf-${k}-${t}" inputmode="decimal" aria-label="${esc(l)} ${y}"></td>`).join("")}</tr>`).join("")}</tbody>`;
+function nfYears(){const y=parseInt(document.getElementById("nf-year").value,10);const ly=y>1990&&y<2100?y:2025;return[ly-4,ly-3,ly-2,ly-1,ly];}
+function nfTable(keep){
+  const old={};if(keep)document.querySelectorAll("#nf-table input").forEach(i=>old[i.id]=i.value);
+  const ys=nfYears();
+  document.getElementById("nf-table").innerHTML=`<thead><tr><th>Poste (millions)</th>${ys.map(y=>`<th class="n">${y}</th>`).join("")}</tr></thead><tbody>${FIELDS.map(([k,l])=>`<tr><td>${l}</td>${ys.map((y,t)=>`<td><input id="nf-${k}-${t}" inputmode="decimal" aria-label="${esc(l)} ${y}" value="${esc(old[`nf-${k}-${t}`]||"")}"></td>`).join("")}</tr>`).join("")}</tbody>`;
 }
 function openNew(){
   document.getElementById("new-form").reset();nfTable();
-  document.getElementById("nf-err").textContent="";document.getElementById("nf-paste-msg").textContent="";
+  if(STOREX.mode==="db"&&STOREX.canWrite===false){histMsg("Lecture seule : demandez un accès Éditeur pour créer des analyses.",true);return;}
+  document.getElementById("nf-err").textContent="";document.getElementById("nf-paste-msg").textContent="";document.getElementById("nf-file-msg").textContent="";
   if(dlg.showModal)dlg.showModal();else dlg.setAttribute("open","");
   document.getElementById("nf-name").focus();
 }
 function closeNew(){if(dlg.close)dlg.close();else dlg.removeAttribute("open");}
 document.getElementById("open-new").onclick=openNew;
+document.getElementById("nf-year").onchange=()=>nfTable(true);
+document.getElementById("nf-file").onchange=e=>{const f=e.target.files&&e.target.files[0];if(f)importFile(f);};
+document.getElementById("nf-template").onclick=()=>downloadTemplate();
 document.getElementById("new-close").onclick=closeNew;
 document.getElementById("nf-cancel").onclick=closeNew;
 document.getElementById("nf-fill").onclick=()=>{
@@ -255,15 +270,11 @@ document.getElementById("new-form").onsubmit=e=>{
   for(const k of ["ca","ta","equity"]){if(data[k].some(v=>!v)){err.textContent="Le chiffre d'affaires, le total actif et les capitaux propres doivent être remplis pour les 5 années.";return;}}
   const cur=document.getElementById("nf-cur").value;
   const hyp={rawShare:.30,pass:.50,salesFx:cur==="M$"?0:.10,costFx:cur==="M$"?0:.30,co2:0,co2exp:0,eur:cur==="MDH"?10.8:cur==="M$"?1.08:1,debt:null,float:.30,sea:.30,tax:.25};
-  let key="co"+Date.now().toString(36);
-  const used=keys().map(k=>state.cos[k].color);
-  const color=PALETTE.find(c=>!used.includes(c))||PALETTE[state.order.length%PALETTE.length];
-  state.cos[key]={name,country:document.getElementById("nf-country").value.trim(),cur,data,hyp,color,custom:true};
-  state.order.push(key);save();closeNew();
-  ui.planCo=key;document.getElementById("pdf-co").value="all";
-  refreshAll();document.getElementById("pdf-co").value=key;
-  const pm=document.getElementById("pdf-msg");pm.className="msg";pm.textContent=`${name} ajoutée${missing?` (${missing} cases vides comptées à 0 : complétez-les dans Données)`:""}.`;
-  location.hash="#accueil";window.scrollTo({top:0,behavior:"smooth"});
+  const ly=nfYears()[4];
+  const k=addCo({name,country:document.getElementById("nf-country").value.trim(),sector:document.getElementById("nf-sector").value.trim(),lastYear:ly,cur,data,hyp},true);
+  closeNew();
+  histMsg(`${name} ajoutée à l'historique${missing?` (${missing} cases vides comptées à 0 : complétez-les dans Données)`:""}.`);
+  location.hash="#accueil";setTimeout(()=>document.getElementById("open-section").scrollIntoView({behavior:"smooth"}),50);
 };
 
 /* ---------- PDF ---------- */
@@ -288,8 +299,7 @@ const CI_A=[["Oui",0],["Partiel",1],["Non",2]];
 const BASES={ca:["Chiffre d'affaires",0.5],ta:["Total actif",1],equity:["Capitaux propres",2],pbt:["Résultat avant impôt",5]};
 function defMission(){return{base:"ca",rate:0.5,perf:70,ci:CI_Q.map(()=>1)};}
 function ensureState(){
-  state.mission=state.mission||{};
-  keys().forEach(k=>{if(!state.mission[k])state.mission[k]=defMission();});
+  Object.keys(state.cos).forEach(k=>{const c=state.cos[k];if(!c.mission)c.mission=defMission();if(!c.env)c.env=defEnv();if(!c.lastYear)c.lastYear=2025;});
   state.team=state.team||["Membre 1","Membre 2","Membre 3","Membre 4","Membre 5"];
   state.phases=state.phases||[
     {name:"Prise de connaissance",start:"2026-11-16",end:"2026-11-29",who:0},
@@ -300,12 +310,12 @@ function ensureState(){
 }
 function pbtOf(b){return b.ebit-b.interest;}
 function materiality(k){
-  const m=state.mission[k],b=yr(state.cos[k].data,4);
+  const m=state.cos[k].mission,b=yr(state.cos[k].data,4);
   const baseVal=m.base==="pbt"?pbtOf(b):b[m.base];
   const sm=baseVal*m.rate/100, sp=sm*m.perf/100, si=sm*0.05;
   return{baseVal,sm,sp,si,neg:baseVal<=0};
 }
-function ciScore(k){const a=state.mission[k].ci;const s=a.reduce((x,y)=>x+y,0)/(a.length*2);return{s,lvl:s<1/3?1:s<2/3?2:3};}
+function ciScore(k){const a=state.cos[k].mission.ci;const s=a.reduce((x,y)=>x+y,0)/(a.length*2);return{s,lvl:s<1/3?1:s<2/3?2:3};}
 const LVL=["","Faible","Moyen","Élevé"];
 const LVLZ=["","good","warn","crit"];
 function auditRisk(r,rc){
@@ -357,12 +367,12 @@ function renderPlanOnly(){renderPlan();}
 
 /* ---------- Assistant IA ---------- */
 let sampler=null,aiTurns=[],aiCtl=null;
-const AI_SUGG=["Pourquoi SNEP est-elle en zone rouge ?","Rédige la conclusion du plan de mission pour SNEP","Compare les trois entreprises en 5 points","Quels contrôles prioriser chez Dow ?","Explique le Beneish M-score simplement"];
+const AI_SUGG=["Explique la note de risque de la société ouverte","Rédige la conclusion du plan de mission","Compare les sociétés ouvertes en 5 points","Quels contrôles faut-il prioriser ?","Explique le Beneish M-score simplement"];
 function aiContext(){
   const o={scenario:scenActive()?{nom:scenName,...scen}:"aucun",societes:keys().map(k=>{const co=state.cos[k],d=co.data,be=beneish(d,4),be24=beneish(d,3),st=stress(k),r=rating(k,false),mt=materiality(k),cs=ciScore(k);
     const last=t=>Object.fromEntries(FIELDS.map(([f])=>[f,d[f][t]]));
-    return{nom:co.name,pays:co.country,devise:co.cur,comptes_2024:last(3),comptes_2025:last(4),beneish_M_2025:+fmt(be.M,2).replace(",","."),beneish_M_2024:+fmt(be24.M,2).replace(",","."),DSRI_2025:be.DSRI,altman_Z_2025:st.zb,altman_Z_apres_crise:st.zs,verdict_crise:VERD[st.verdict],note:r.grade,score_note:Math.round(r.score),
-      seuil_signification:mt.neg?null:Math.round(mt.sm),seuil_planification:mt.neg?null:Math.round(mt.sp),base_seuil:BASES[state.mission[k].base][0],risque_controle:LVL[cs.lvl],
+    return{nom:co.name,pays:co.country,devise:co.cur,exercice_N:YEARS[4],comptes_N_moins_1:last(3),comptes_N:last(4),beneish_M_N:+fmt(be.M,2).replace(",","."),beneish_M_N_moins_1:+fmt(be24.M,2).replace(",","."),DSRI_N:be.DSRI,altman_Z_N:st.zb,altman_Z_apres_crise:st.zs,verdict_crise:VERD[st.verdict],note:r.grade,score_note:Math.round(r.score),
+      seuil_signification:mt.neg?null:Math.round(mt.sm),seuil_planification:mt.neg?null:Math.round(mt.sp),base_seuil:BASES[state.cos[k].mission.base][0],risque_controle:LVL[cs.lvl],
       risques:risks(k).sort((a,b)=>b.score-a.score).map(x=>({risque:x.risque||x.risk,proba:x.prob,impact:x.impact,indicateur:x.why,procedure:x.proc}))};})};
   return JSON.stringify(o,(k,v)=>typeof v==="number"?Math.round(v*1000)/1000:v);
 }
@@ -377,9 +387,10 @@ function setupAssistant(){
   document.querySelectorAll("#ai-chips button").forEach(b=>b.onclick=()=>{inp.value=AI_SUGG[+b.dataset.i];ask();});
   const off=msg=>{st.textContent=msg;send.disabled=true;inp.disabled=true;document.querySelectorAll("#ai-chips button").forEach(b=>b.disabled=true);};
   if(!(window.claude&&window.claude.use)){off("L'assistant fonctionne dans la version publiée sur Claude (claude.ai). Sur un hébergement externe, il nécessite un serveur (niveau 3).");return;}
-  window.claude.use("sample").then(s=>{if(!s){off("L'assistant n'est pas disponible dans cet affichage.");return;}sampler=s;st.textContent="Prêt. La première question vous demandera d'autoriser l'assistant (il utilise votre compte Claude).";}).catch(()=>off("L'assistant n'est pas disponible dans cet affichage."));
+  window.claude.use("sample").then(s=>{if(!s){off("L'assistant n'est pas disponible dans cet affichage.");return;}sampler=s;renderEnv();st.textContent="Prêt. La première question vous demandera d'autoriser l'assistant (il utilise votre compte Claude).";}).catch(()=>off("L'assistant n'est pas disponible dans cet affichage."));
   async function ask(){
     const q=inp.value.trim();if(!q||!sampler)return;
+    if(!keys().length){st.textContent="Ouvrez d'abord une analyse depuis l'historique.";return;}
     inp.value="";addBubble("user",esc(q));aiTurns.push({role:"user",content:q});
     const bub=addBubble("ai","<p class=\"small\">Réflexion…</p>");
     send.disabled=true;stop.hidden=false;aiCtl=new AbortController();
@@ -414,7 +425,7 @@ function buildSlides(){
   const S=[];
   S.push(`<div class="small" style="letter-spacing:2px;text-transform:uppercase">Mission d'audit · Master CCA</div><h1>RiskScope : identifier les risques inhérents de ${ks.map(k=>esc(state.cos[k].name)).join(", ")}</h1><p class="lead">Une plateforme fintech qui croise les risques venant des comptes et ceux venant de l'environnement, puis génère le plan de mission.</p><p class="small">Équipe FIDEX5 : ${state.team.map(esc).join(" · ")}</p>`);
   S.push(`<h2>Notre démarche</h2><div class="grid3">${[["1. Fraud Radar","Beneish M-score, loi de Benford et ratios d'alerte sur 5 ans d'états financiers."],["2. CrashTest","Simulation de crises : pétrole, dollar, fret, taxe carbone, taux."],["3. Plan de mission","Matrice des risques, seuil de signification, risque d'audit et procédures."]].map(([t,d])=>`<div class="card"><h3>${t}</h3><p class="small" style="font-size:15px">${d}</p></div>`).join("")}</div>`);
-  S.push(`<h2>Notation de risque 2025</h2><div class="grid3">${ks.map(k=>{const r=rating(k,false);return `<div class="card co" style="--co:${col(k)}"><div class="co-name">${esc(state.cos[k].name)}</div><div class="rating ${r.zone}" style="font-size:64px;margin-top:8px">${r.grade}</div><div class="small">Score ${fmt(r.score)}/100 · Altman Z' ${fmt(stress(k).zb,2)}</div></div>`;}).join("")}</div>`);
+  S.push(`<h2>Notation de risque ${YEARS[4]}</h2><div class="grid3">${ks.map(k=>{const r=rating(k,false);return `<div class="card co" style="--co:${col(k)}"><div class="co-name">${esc(state.cos[k].name)}</div><div class="rating ${r.zone}" style="font-size:64px;margin-top:8px">${r.grade}</div><div class="small">Score ${fmt(r.score)}/100 · Altman Z' ${fmt(stress(k).zb,2)}</div></div>`;}).join("")}</div>`);
   S.push(`<h2>Alerte Fraud Radar : ${esc(state.cos[ak].name)} en ${YEARS[at]}</h2><div class="grid3"><div class="card"><div class="small">Beneish M-score</div><div class="big">${fmt(abe.M,2)}</div>${pill(mZone(abe.M),M_LABEL[mZone(abe.M)])}</div><div class="card"><div class="small">Créances clients</div><div class="big">${ac.rec>=ap.rec?"+":""}${pct(ac.rec/ap.rec-1)}</div><div class="small">contre un chiffre d'affaires de ${pct(ac.ca/ap.ca-1)}</div></div><div class="card"><div class="small">Indice DSRI</div><div class="big">${fmt(abe.DSRI,2)}</div><div class="small">au-delà de 1 : créances qui gonflent</div></div></div><p class="lead">Ce n'est pas une preuve de fraude, mais une zone à tester : circularisation des clients, balance âgée, séparation des exercices.</p>`);
   S.push(`<h2>CrashTest : « ${shock[0]} »</h2><p class="lead">Pétrole +40 %, dollar +5 %, fret +5 %.</p><div class="grid3">${ks.map(k=>{const st=withScen(shock[1],()=>stress(k));return `<div class="card co" style="--co:${col(k)}"><div class="co-name">${esc(state.cos[k].name)}</div><div class="row"><span>Résultat d'exploitation</span><span class="num">${fmt(st.b.ebit)} → <b>${fmt(st.ebit)}</b></span></div><div class="row"><span>Altman Z'</span><span class="num">${fmt(st.zb,2)} → <b>${fmt(st.zs,2)}</b></span></div><div style="margin-top:8px">${pill(st.verdict,VERD[st.verdict])}</div></div>`;}).join("")}</div>`);
   S.push(`<h2>Risques prioritaires et travaux d'audit</h2><div class="grid3">${ks.map(k=>{const cs=ciScore(k),mt=materiality(k);return `<div class="card co" style="--co:${col(k)}"><div class="co-name">${esc(state.cos[k].name)}</div><ul class="alerts">${risks(k).sort((a,b)=>b.score-a.score).slice(0,3).map(r=>`<li><span class="dot ${prio(r.score)}"></span><span>${esc(r.risk)}</span></li>`).join("")}</ul><p class="small" style="margin-top:10px">Seuil de signification : ${mt.neg?"n.d.":fmt(mt.sm)+" "+esc(state.cos[k].cur)} · Risque lié au contrôle : ${LVL[cs.lvl].toLowerCase()}</p></div>`;}).join("")}</div>`);
@@ -422,7 +433,7 @@ function buildSlides(){
   return S;
 }
 function showSlide(){document.getElementById("slide").innerHTML=deckSlides[deckI];document.getElementById("deck-count").textContent=`${deckI+1} / ${deckSlides.length}`;document.getElementById("deck-prev").disabled=deckI===0;document.getElementById("deck-next").textContent=deckI===deckSlides.length-1?"Terminer":"Suivant →";}
-function openDeck(){deckSlides=buildSlides();deckI=0;const d=document.getElementById("deck");d.classList.add("on");showSlide();try{d.requestFullscreen&&d.requestFullscreen().catch(()=>{});}catch(e){}}
+function openDeck(){if(!keys().length){alertBar("Ouvrez d'abord une analyse (ou une comparaison) depuis l'historique pour lancer la présentation.");return;}deckSlides=buildSlides();deckI=0;const d=document.getElementById("deck");d.classList.add("on");showSlide();try{d.requestFullscreen&&d.requestFullscreen().catch(()=>{});}catch(e){}}
 function closeDeck(){document.getElementById("deck").classList.remove("on");try{if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});}catch(e){}}
 document.getElementById("present").onclick=openDeck;
 document.getElementById("deck-close").onclick=closeDeck;
@@ -433,22 +444,22 @@ document.addEventListener("keydown",e=>{if(!document.getElementById("deck").clas
 /* ---------- Guides d'utilisation ---------- */
 const GUIDES={
 accueil:{t:"Comment utiliser l'accueil",steps:[
- "<b>Ajouter une société</b> : « + Analyser une nouvelle société » ouvre un formulaire. Saisissez les 17 postes sur 5 ans ou collez-les depuis Excel, puis lancez l'analyse.",
- "<b>Lire les cartes</b> : chaque société affiche sa note de risque, son Beneish M-score (risque de manipulation des comptes) et son Altman Z' (risque de défaillance), puis ses trois risques prioritaires.",
- "<b>Lire la matrice</b> : chaque risque est placé selon sa probabilité (horizontal) et son impact (vertical). Les cases rouges (score ≥ 15) sont à traiter en priorité dans le plan de mission.",
- "<b>Plan de mission</b> : la liste des risques classés, avec les comptes, les assertions et les procédures d'audit à mettre en œuvre.",
- "<b>Exporter</b> : « Télécharger le rapport PDF » produit un rapport complet (graphiques et interprétations) ; « Exporter les résultats (CSV) » donne un fichier lisible dans Excel."]},
+ "<b>Nouvelle analyse</b> : téléchargez le modèle Excel, remplissez les 17 postes sur 5 exercices, puis importez le fichier dans « + Nouvelle analyse ». Vous pouvez aussi coller les chiffres depuis Excel ou les saisir à la main.",
+ "<b>Historique</b> : chaque analyse est conservée avec sa note, son M-score, son Altman Z' et son verdict. « Ouvrir » affiche l'analyse ; « PDF » télécharge le rapport ; la recherche filtre par nom, pays ou secteur.",
+ "<b>Comparer</b> : cochez 2 à 4 analyses puis « Comparer la sélection ». Tous les onglets (Fraud Radar, CrashTest, Ratios, Mission…) affichent alors les sociétés côte à côte.",
+ "<b>Exemples</b> : SNEP, Arkema et Dow se chargent d'un clic pour découvrir l'outil ou faire une démonstration.",
+ "<b>Lire l'analyse ouverte</b> : cartes de synthèse, matrice des risques (probabilité × impact) et plan de mission généré, avec interprétations et exports PDF ou CSV."]},
 radar:{t:"Comment utiliser le Fraud Radar",steps:[
- "<b>Choisir l'exercice</b> (2022 à 2025) en haut à droite : chaque indice compare l'année choisie à l'année précédente.",
+ "<b>Choisir l'exercice</b> (les quatre derniers) en haut à droite : chaque indice compare l'année choisie à l'année précédente.",
  "<b>Beneish M-score</b> : au-dessus de −1,78, risque de manipulation probable ; entre −2,22 et −1,78, zone grise ; en dessous de −2,22, pas d'alerte.",
  "<b>Radar</b> : six axes de 0 (normal) à 100 (alerte forte). Créances = DSRI, Marges = GMI, Accruals = TATA (résultat non encaissé), Endettement, Stocks, Benford.",
  "<b>Loi de Benford</b> : dans des données naturelles, le chiffre 1 apparaît en premier dans environ 30 % des cas. Un écart important peut signaler des chiffres arrangés.",
  "<b>À retenir</b> : ces scores signalent où chercher ; ils ne prouvent pas une fraude. Chaque alerte se traduit par des tests (circularisation, cut-off, revue des écritures)."]},
 crashtest:{t:"Comment utiliser le CrashTest",steps:[
  "<b>Choisir une crise</b> avec les boutons (choc pétrolier, mer Rouge, dollar fort…) ou régler les six curseurs vous-même.",
- "<b>Lire les cartes</b> : les comptes 2025 sont recalculés. Le verdict passe à « Continuité menacée » si l'Altman Z' tombe sous 1,23, si les intérêts ne sont plus couverts 1,5 fois ou si le résultat devient négatif.",
+ "<b>Lire les cartes</b> : les comptes du dernier exercice sont recalculés. Le verdict passe à « Continuité menacée » si l'Altman Z' tombe sous 1,23, si les intérêts ne sont plus couverts 1,5 fois ou si le résultat devient négatif.",
  "<b>Effet de chaque facteur</b> : barres rouges = perte, vertes = gain, en millions de la devise de la société.",
- "<b>Graphique des marges</b> : cercle vide = marge 2025, cercle plein = marge après la crise. Plus le trait est long, plus la société est sensible.",
+ "<b>Graphique des marges</b> : cercle vide = marge du dernier exercice, cercle plein = marge après la crise. Plus le trait est long, plus la société est sensible.",
  "<b>Hypothèses</b> : la sensibilité de chaque société (part du pétrole, exposition au dollar, CO₂, dette variable) se règle dans l'onglet Données."]},
 ratios:{t:"Comment lire les ratios et la notation",steps:[
  "<b>Note AAA à D</b> : combine six critères pondérés (solvabilité 30 %, couverture des intérêts 20 %, marge 15 %, endettement 15 %, trésorerie 10 %, qualité des comptes 10 %). AAA à BBB = solide, BB à B = vulnérable, CCC à D = très fragile. C'est une note pédagogique, pas celle d'une agence.",
@@ -467,7 +478,7 @@ environnement:{t:"Comment utiliser cet onglet",steps:[
  "Il justifie les hypothèses du CrashTest et les risques retenus dans le plan de mission : citez-le dans votre présentation de l'étape 2 du travail."]},
 equipe:{t:"Comment travailler en équipe",steps:[
  "<b>Accès</b> : le propriétaire de la page la partage avec chaque membre (bouton Partager de claude.ai, accès Éditeur pour pouvoir mettre à jour les tâches). Chacun est reconnu par son compte Claude : pas de mot de passe à créer.",
- "<b>Créer la mission</b> (chef de mission) : choisissez la société, l'échéance, et laissez cochée la génération des tâches. Une fiche est créée pour chaque risque du plan, avec objectif, procédures, échantillon et consignes.",
+ "<b>Créer la mission</b> (chef de mission) : choisissez une analyse de l'historique, l'échéance, et laissez cochée la génération des tâches. Une fiche est créée pour chaque risque du plan, avec objectif, procédures, échantillon et consignes.",
  "<b>Ajouter les membres</b> : dans « Équipe », cherchez un collègue par son nom, ou acceptez les demandes de ceux qui ont cliqué sur « Demander à rejoindre ». Donnez un rôle : auditeur ou stagiaire.",
  "<b>Attribuer</b> : ouvrez une fiche, choisissez le responsable et l'échéance. Chaque membre retrouve ses fiches dans « Mes tâches », avec ce qu'il doit faire (✓) et ce qu'il ne doit pas faire (✗).",
  "<b>Réaliser et réviser</b> : le membre commence la tâche, rédige ses travaux et sa conclusion, puis la marque terminée. Le chef de mission la valide ou la renvoie avec un commentaire. Le tableau de bord suit l'avancement et les retards."]},
@@ -506,7 +517,7 @@ function interpBenford(bf){const z=benZone(bf.mad);
   return z==="good"?`La répartition des premiers chiffres suit la loi de Benford (écart ${fmt(bf.mad,4)}) : pas d'anomalie visible.`:`Écart de ${fmt(bf.mad,4)}, ${z==="warn"?"à la limite":"au-delà"} du seuil de 0,015. Avec seulement ${bf.n} montants, le test reste indicatif : à refaire sur le grand livre avant de conclure.`;}
 function interpStress(k){
   const st=stress(k),cu=state.cos[k].cur;
-  if(!scenActive())return `Aucune crise sélectionnée : Altman Z' de ${fmt(st.zb,2)} en 2025, ${st.zb<1.23?"zone de détresse":st.zb<2.9?"zone grise":"zone saine"}. Choisissez un scénario pour mesurer la résistance de la société.`;
+  if(!scenActive())return `Aucune crise sélectionnée : Altman Z' de ${fmt(st.zb,2)} en ${YEARS[4]}, ${st.zb<1.23?"zone de détresse":st.zb<2.9?"zone grise":"zone saine"}. Choisissez un scénario pour mesurer la résistance de la société.`;
   const worst=Object.entries(st.c).sort((a,b)=>a[1]-b[1])[0];
   const ch=Math.abs(st.b.ebit)>0?(st.ebit-st.b.ebit)/Math.abs(st.b.ebit):NaN;
   let s=`Sous « ${scenName} », le résultat d'exploitation passe de ${fmt(st.b.ebit)} à ${fmt(st.ebit)} ${cu}${isFinite(ch)?` (${ch>0?"+":""}${pct(ch)})`:""}.`;
@@ -517,7 +528,7 @@ function interpStress(k){
 function interpDumbbell(){
   const d=keys().map(k=>({k,s:stress(k)})).filter(x=>isFinite(x.s.marginB)&&isFinite(x.s.marginS));
   if(!d.length)return "";
-  if(!scenActive())return `Marges 2025 : ${d.map(x=>`${state.cos[x.k].name} ${pct(x.s.marginB,1)}`).join(", ")}. Choisissez une crise pour comparer la sensibilité des sociétés.`;
+  if(!scenActive())return `Marges ${YEARS[4]} : ${d.map(x=>`${state.cos[x.k].name} ${pct(x.s.marginB,1)}`).join(", ")}. Choisissez une crise pour comparer la sensibilité des sociétés.`;
   const w=d.reduce((a,b)=>(b.s.marginS-b.s.marginB)<(a.s.marginS-a.s.marginB)?b:a);
   const loss=w.s.marginS-w.s.marginB;
   return `${state.cos[w.k].name} est la plus touchée : sa marge perd ${fmt(Math.abs(loss)*100,1)} point${Math.abs(loss)*100>=2?"s":""}. Un même choc ne frappe pas les sociétés de la même façon selon leur structure de coûts, leur devise et leur pouvoir de prix.`;
@@ -536,9 +547,9 @@ function interpRatio(id,f){
   const trend=ks.map(k=>{const [a,b]=v(k);return `${state.cos[k].name} ${isFinite(a)?f(a):"n.d."} → ${isFinite(b)?f(b):"n.d."}`;}).join(" ; ");
   const last=ks.map(k=>({k,x:v(k)[1]})).filter(o=>isFinite(o.x));
   const names=arr=>arr.map(o=>state.cos[o.k].name).join(", ");
-  let s=`De 2021 à 2025 : ${trend}.`;
+  let s=`De ${YEARS[0]} à ${YEARS[4]} : ${trend}.`;
   const best=last.length?last.reduce((a,b)=>(id==="gear"||id==="dso")?(b.x<a.x?b:a):(b.x>a.x?b:a)):null;
-  if(best&&last.length>1)s+=` Meilleure position en 2025 : ${state.cos[best.k].name}.`;
+  if(best&&last.length>1)s+=` Meilleure position en ${YEARS[4]} : ${state.cos[best.k].name}.`;
   const flag=(cond,txt)=>{const l=last.filter(o=>cond(o.x));if(l.length)s+=` ${names(l)} : ${txt}`;};
   if(id==="marg")flag(x=>x<0,"marge négative, l'activité perd de l'argent avant frais financiers.");
   if(id==="roe")flag(x=>x<0,"rentabilité négative, les pertes réduisent les capitaux propres.");
@@ -597,8 +608,9 @@ CSV.benford=()=>[["Société","Montants",...[1,2,3,4,5,6,7,8,9].map(d=>"Chiffre 
 CSV.stress=()=>[["Scénario",scenActive()?scenName:"aucun",...SLIDERS.map(s=>`${s[1]} : ${scen[s[0]]}${s[5]}`)],[],["Société","Devise","CA avant","CA après","EBIT avant","EBIT après","Résultat net avant","Résultat net après","Couverture avant","Couverture après","Z' avant","Z' après","Verdict","Marge avant","Marge après",...Object.values(NAMES).map(n=>"Effet "+n.toLowerCase())],...keys().map(k=>{const s=stress(k);return[state.cos[k].name,state.cos[k].cur,s.b.ca,s.ca,s.b.ebit,s.ebit,s.b.net,s.net,s.covB,s.cov,s.zb,s.zs,VERD[s.verdict],s.marginB,s.marginS,...Object.keys(NAMES).map(n=>s.c[n])];})];
 CSV.ratios=()=>[["Société","Exercice",...RATIO_DEFS.map(d=>d[1])],...keys().flatMap(k=>YEARS.map((y,t)=>{const r=ratios(k,t);return[state.cos[k].name,y,...RATIO_DEFS.map(d=>r[d[0]])];}))];
 RATIO_DEFS.forEach(([id,title])=>{CSV["ratio_"+id]=()=>[["Exercice",...keys().map(k=>state.cos[k].name)],...YEARS.map((y,t)=>[y,...keys().map(k=>ratios(k,t)[id])])];});
-CSV.rating=()=>[["Société","Note","Score /100",...rating(keys()[0],false).parts.map(p=>`${p[0]} (poids ${p[1]})`),"Interprétation"],...keys().map(k=>{const r=rating(k,false);return[state.cos[k].name,r.grade,r.score,...r.parts.map(p=>p[2]),interpRating(k)];})];
-CSV.mission=()=>{const k=ui.missionCo,co=state.cos[k],mt=materiality(k),cs=ciScore(k);return[["Société",co.name],["Base du seuil",BASES[state.mission[k].base][0]],["Taux (%)",state.mission[k].rate],["Seuil de signification",mt.sm],["Seuil de planification",mt.sp],["Anomalies insignifiantes",mt.si],["Risque lié au contrôle",LVL[cs.lvl]],[],["Question de contrôle interne","Réponse"],...CI_Q.map((q,i)=>[q,CI_A.find(a=>a[1]===state.mission[k].ci[i])[0]]),[],["Risque","Comptes","Risque inhérent","Risque lié au contrôle","Non-détection acceptable","Travaux","Échantillon"],...risks(k).sort((a,b)=>b.score-a.score).map(r=>{const a=auditRisk(r,cs.lvl);return[r.risk,r.compte,LVL[a.ri],LVL[cs.lvl],LVL[a.rnd],a.work,a.sample];})];};
+CSV.history=()=>[["Société","Pays","Secteur","Devise","Dernier exercice","Note","Score","M-score","Altman Z'","Verdict","Créée le","Mise à jour"],...libKeys().map(k=>{const c=state.cos[k];let r,be,st;withScen(ZERO,()=>{r=rating(k,false);be=beneish(c.data,4);st=stress(k);});return[c.name,c.country||"",c.sector||"",c.cur,c.lastYear||"",r.grade,r.score,be.M,st.zb,VERD[st.verdict],c.createdAt?new Date(c.createdAt).toLocaleDateString("fr-FR"):"",c.updatedAt?new Date(c.updatedAt).toLocaleDateString("fr-FR"):""];})];
+CSV.rating=()=>!keys().length?[["Aucune analyse ouverte"]]:[["Société","Note","Score /100",...rating(keys()[0],false).parts.map(p=>`${p[0]} (poids ${p[1]})`),"Interprétation"],...keys().map(k=>{const r=rating(k,false);return[state.cos[k].name,r.grade,r.score,...r.parts.map(p=>p[2]),interpRating(k)];})];
+CSV.mission=()=>{const k=ui.missionCo,co=state.cos[k],mt=materiality(k),cs=ciScore(k);return[["Société",co.name],["Base du seuil",BASES[state.cos[k].mission.base][0]],["Taux (%)",state.cos[k].mission.rate],["Seuil de signification",mt.sm],["Seuil de planification",mt.sp],["Anomalies insignifiantes",mt.si],["Risque lié au contrôle",LVL[cs.lvl]],[],["Question de contrôle interne","Réponse"],...CI_Q.map((q,i)=>[q,CI_A.find(a=>a[1]===state.cos[k].mission.ci[i])[0]]),[],["Risque","Comptes","Risque inhérent","Risque lié au contrôle","Non-détection acceptable","Travaux","Échantillon"],...risks(k).sort((a,b)=>b.score-a.score).map(r=>{const a=auditRisk(r,cs.lvl);return[r.risk,r.compte,LVL[a.ri],LVL[cs.lvl],LVL[a.rnd],a.work,a.sample];})];};
 CSV.calendar=()=>[["Phase","Début","Fin","Responsable"],...state.phases.map(p=>[p.name,p.start,p.end,state.team[p.who]||""])];
 CSV.all=()=>{const out=[["RiskScope FIDEX5 - export des résultats",new Date().toLocaleDateString("fr-FR")],[]];
   const add=(t,rows)=>{out.push([t]);rows.forEach(r=>out.push(r));out.push([]);};
@@ -622,8 +634,8 @@ function renderOverview(){
     const rs=risks(k).sort((a,b)=>b.score-a.score);
     return coCard(k,`<div class="kpis" style="grid-template-columns:auto 1fr 1fr;align-items:end">
       <div class="kpi"><div class="lab">Note</div><div class="rating ${r.zone}" style="font-size:34px">${r.grade}</div></div>
-      <div class="kpi"><div class="lab">M-score 2025</div><div class="val">${fmt(be.M,2)}</div>${pill(mZone(be.M),M_LABEL[mZone(be.M)])}</div>
-      <div class="kpi"><div class="lab">Altman Z' ${scenActive()?"après crise":"2025"}</div><div class="val">${fmt(st.zs,2)}</div>${pill(st.verdict,VERD[st.verdict])}</div>
+      <div class="kpi"><div class="lab">M-score ${YEARS[4]}</div><div class="val">${fmt(be.M,2)}</div>${pill(mZone(be.M),M_LABEL[mZone(be.M)])}</div>
+      <div class="kpi"><div class="lab">Altman Z' ${scenActive()?"après crise":String(YEARS[4])}</div><div class="val">${fmt(st.zs,2)}</div>${pill(st.verdict,VERD[st.verdict])}</div>
     </div>
     <p class="small" style="margin:12px 0 4px">Risques prioritaires</p>
     <ul class="alerts">${rs.slice(0,3).map(r=>`<li><span class="dot ${prio(r.score)}"></span><span>${esc(r.risk)} <span class="small">(${esc(r.why)})</span></span></li>`).join("")}</ul>
@@ -704,7 +716,7 @@ function renderStress(){
       <p class="small" style="margin:12px 0 2px">Effet de chaque facteur sur le résultat (${esc(cu)})</p>${contrib}
       ${interp(interpStress(k))}`);
   }).join("");
-  document.getElementById("dumbbell").innerHTML=`<div class="scroll">${dumbbellSvg()}</div><p class="small">Cercle vide : marge 2025 ; cercle plein : marge après la crise sélectionnée.</p>`;
+  document.getElementById("dumbbell").innerHTML=`<div class="scroll">${dumbbellSvg()}</div><p class="small">Cercle vide : marge ${YEARS[4]} ; cercle plein : marge après la crise sélectionnée.</p>`;
   document.getElementById("dumbbell-interp").innerHTML=interp(interpDumbbell());
 }
 function dumbbellSvg(){
@@ -755,8 +767,9 @@ function lineChart(series,u,f){
   return s+`</svg>`;
 }
 function renderMission(){
-  if(!state.cos[ui.missionCo])ui.missionCo=keys()[0];
-  const k=ui.missionCo,m=state.mission[k],co=state.cos[k];
+  if(!keys().length)return;
+  if(!keys().includes(ui.missionCo))ui.missionCo=keys()[0];
+  const k=ui.missionCo,m=state.cos[k].mission,co=state.cos[k];
   const seg=document.getElementById("mission-co");
   seg.innerHTML=keys().map(x=>`<button aria-pressed="${x===k}" data-k="${x}">${esc(state.cos[x].name)}</button>`).join("");
   seg.querySelectorAll("button").forEach(b=>b.onclick=()=>{ui.missionCo=b.dataset.k;renderMission();});
@@ -768,7 +781,7 @@ function renderMission(){
   const mt=materiality(k);
   document.getElementById("ms-out").innerHTML=[["Seuil de signification",mt.sm],["Seuil de planification",mt.sp],["Anomalies insignifiantes (5 %)",mt.si]].map(([l,v])=>`<div class="box"><div class="lab">${l}</div><div class="val">${mt.neg?"n.d.":fmt(v,v<10?2:0)}</div><div class="small">${esc(co.cur)}</div></div>`).join("");
   const loss=pbtOf(yr(co.data,4))<=0;
-  document.getElementById("ms-note").innerHTML=mt.neg?`<b>Base négative ou nulle :</b> choisissez le chiffre d'affaires ou le total actif.`:`Base retenue : ${BASES[m.base][0].toLowerCase()} 2025 = ${fmt(mt.baseVal)} ${esc(co.cur)} × ${fmt(m.rate,2)} %. Fourchettes usuelles : CA 0,5–1 %, total actif 1–2 %, capitaux propres 1–5 %, résultat avant impôt 5–10 %.${loss?" La société est déficitaire : le résultat n'est pas une base pertinente.":""}`;
+  document.getElementById("ms-note").innerHTML=mt.neg?`<b>Base négative ou nulle :</b> choisissez le chiffre d'affaires ou le total actif.`:`Base retenue : ${BASES[m.base][0].toLowerCase()} ${YEARS[4]} = ${fmt(mt.baseVal)} ${esc(co.cur)} × ${fmt(m.rate,2)} %. Fourchettes usuelles : CA 0,5–1 %, total actif 1–2 %, capitaux propres 1–5 %, résultat avant impôt 5–10 %.${loss?" La société est déficitaire : le résultat n'est pas une base pertinente.":""}`;
   document.getElementById("ci-list").innerHTML=CI_Q.map((q,i)=>`<div class="q"><span>${q}</span><div class="seg" role="group" aria-label="${esc(q)}">${CI_A.map(([l,v])=>`<button aria-pressed="${m.ci[i]===v}" data-i="${i}" data-v="${v}">${l}</button>`).join("")}</div></div>`).join("");
   document.querySelectorAll("#ci-list button").forEach(b=>b.onclick=()=>{m.ci[+b.dataset.i]=+b.dataset.v;save();renderMission();});
   const cs=ciScore(k);
@@ -796,7 +809,7 @@ async function buildPdf(ks){
   const img={};
   const grab=async(key,svg,title)=>{try{img[key]=await svgToPng(svg,title);}catch(e){}};
   for(const [id,title,u,f] of RATIO_DEFS)await grab("r_"+id,lineChart(ks.map(k=>({k,vals:YEARS.map((yy,t)=>ratios(k,t)[id])})),u,f),title);
-  for(const k of ks)await grab("radar_"+k,radarSVG(radarData(k,4).v,col(k)),"Fraud Radar 2025");
+  for(const k of ks)await grab("radar_"+k,radarSVG(radarData(k,4).v,col(k)),"Fraud Radar "+YEARS[4]);
   if(scenActive())await grab("dumb",dumbbellSvg(),"Marge d'exploitation avant / après crise");
   const g=document.querySelector("#gantt svg");if(g)await grab("gantt",g.outerHTML,"Calendrier de la mission");
   const stamp=()=>{doc.setFont("helvetica","bold");doc.setFontSize(18);doc.setTextColor(30,33,37);doc.text("FIDEX",M,16);const w=doc.getTextWidth("FIDEX");doc.setTextColor(176,99,111);doc.text("5",M+w,16);
@@ -816,13 +829,13 @@ async function buildPdf(ks){
   y=28;
   doc.setFont("helvetica","bold");doc.setFontSize(20);doc.setTextColor(30,33,37);
   doc.text(P(ks.length>1?"Rapport d'analyse des risques inhérents":"Rapport d'analyse : "+state.cos[ks[0]].name),M,y);y+=8;
-  para(`Sociétés analysées : ${ks.map(k=>state.cos[k].name).join(", ")}. Exercices 2021 à 2025. Scénario de crise : ${scenActive()?scenName+" ("+SLIDERS.filter(s=>scen[s[0]]).map(s=>s[1].toLowerCase()+" "+sign(s[0],scen[s[0]])+s[5]).join(", ")+")":"aucun"}. Équipe : ${state.team.join(", ")}.`);
+  para(`Sociétés analysées : ${ks.map(k=>state.cos[k].name).join(", ")}. Exercices ${YEARS[0]} à ${YEARS[4]}. Scénario de crise : ${scenActive()?scenName+" ("+SLIDERS.filter(s=>scen[s[0]]).map(s=>s[1].toLowerCase()+" "+sign(s[0],scen[s[0]])+s[5]).join(", ")+")":"aucun"}. Équipe : ${state.team.join(", ")}.`);
   h3("Synthèse");
-  table(["Société","Devise","Note","M-score 2025","Lecture","Z' 2025","Z' après crise","Verdict"],ks.map(k=>{const be=beneish(state.cos[k].data,4),st=stress(k),r=rating(k,false);return[state.cos[k].name,state.cos[k].cur,`${r.grade} (${fmt(r.score)})`,fmt(be.M,2),M_LABEL[mZone(be.M)],fmt(st.zb,2),fmt(st.zs,2),VERD[st.verdict]];}));
+  table(["Société","Devise","Note","M-score "+YEARS[4],"Lecture","Z' "+YEARS[4],"Z' après crise","Verdict"],ks.map(k=>{const be=beneish(state.cos[k].data,4),st=stress(k),r=rating(k,false);return[state.cos[k].name,state.cos[k].cur,`${r.grade} (${fmt(r.score)})`,fmt(be.M,2),M_LABEL[mZone(be.M)],fmt(st.zb,2),fmt(st.zs,2),VERD[st.verdict]];}));
   ks.forEach(k=>note(`${state.cos[k].name} - ${interpRating(k)}`));
   if(ks.length>1){note(interpMatrix());}
   // ratios
-  newPage();h2("Évolution des ratios (2021-2025)");
+  newPage();h2(`Évolution des ratios (${YEARS[0]}-${YEARS[4]})`);
   const cw=(CW-6)/2;
   for(let i=0;i<RATIO_DEFS.length;i+=2){
     const a=img["r_"+RATIO_DEFS[i][0]],b=RATIO_DEFS[i+1]&&img["r_"+RATIO_DEFS[i+1][0]];
@@ -842,16 +855,16 @@ async function buildPdf(ks){
     h3("Chiffres clés");
     const keyF=["ca","ebit","net","cfo","rec","inv","ta","equity","ltd"];
     table(["Poste",...YEARS.map(String)],keyF.map(f=>[FIELDS.find(x=>x[0]===f)[1],...co.data[f].map(v=>fmt(v,Math.abs(v)<100&&v%1?1:0))]),{columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"},5:{halign:"right"}}});
-    h3("Indices Beneish (2022 à 2025)");
+    h3(`Indices Beneish (${YEARS[1]} à ${YEARS[4]})`);
     const bes=[1,2,3,4].map(t=>beneish(co.data,t));
-    table(["Indice","2022","2023","2024","2025"],["DSRI","GMI","AQI","SGI","DEPI","SGAI","LVGI","TATA","M"].map(id=>[id==="M"?"M-score":id,...bes.map(b=>fmt(b[id],id==="TATA"?3:2))]),{columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"}}});
+    table(["Indice",...YEARS.slice(1).map(String)],["DSRI","GMI","AQI","SGI","DEPI","SGAI","LVGI","TATA","M"].map(id=>[id==="M"?"M-score":id,...bes.map(b=>fmt(b[id],id==="TATA"?3:2))]),{columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"}}});
     h3(scenActive()?"CrashTest : "+scenName:"Solidité financière");
     const b=st.b;
     table(["Indicateur","Avant","Après"],[["Chiffre d'affaires",fmt(b.ca),fmt(st.ca)],["Résultat d'exploitation",fmt(b.ebit),fmt(st.ebit)],["Résultat net",fmt(b.net),fmt(st.net)],["Couverture des intérêts",isFinite(st.covB)?fmt(st.covB,1)+"x":"n.d.",isFinite(st.cov)?fmt(st.cov,1)+"x":"n.d."],["Altman Z'",fmt(st.zb,2),fmt(st.zs,2)]],{columnStyles:{1:{halign:"right"},2:{halign:"right"}}});
     note(interpStress(k));
     {const mt=materiality(k),cs=ciScore(k),r=rating(k,false);
     h3("Notation et planification");
-    table(["Élément","Valeur"],[["Note de risque",`${r.grade} (score ${fmt(r.score)}/100)`],["Seuil de signification",mt.neg?"n.d. (base négative)":`${fmt(mt.sm)} ${co.cur} (${BASES[state.mission[k].base][0].toLowerCase()} x ${fmt(state.mission[k].rate,2)} %)`],["Seuil de planification",mt.neg?"n.d.":`${fmt(mt.sp)} ${co.cur} (${fmt(state.mission[k].perf)} % du seuil)`],["Anomalies insignifiantes",mt.neg?"n.d.":`${fmt(mt.si,mt.si<10?2:0)} ${co.cur}`],["Risque lié au contrôle",`${LVL[cs.lvl]} (${Math.round(cs.s*100)} % de faiblesses au questionnaire)`]],{columnStyles:{0:{cellWidth:55}}});
+    table(["Élément","Valeur"],[["Note de risque",`${r.grade} (score ${fmt(r.score)}/100)`],["Seuil de signification",mt.neg?"n.d. (base négative)":`${fmt(mt.sm)} ${co.cur} (${BASES[state.cos[k].mission.base][0].toLowerCase()} x ${fmt(state.cos[k].mission.rate,2)} %)`],["Seuil de planification",mt.neg?"n.d.":`${fmt(mt.sp)} ${co.cur} (${fmt(state.cos[k].mission.perf)} % du seuil)`],["Anomalies insignifiantes",mt.neg?"n.d.":`${fmt(mt.si,mt.si<10?2:0)} ${co.cur}`],["Risque lié au contrôle",`${LVL[cs.lvl]} (${Math.round(cs.s*100)} % de faiblesses au questionnaire)`]],{columnStyles:{0:{cellWidth:55}}});
     note(interpMission(k));
     h3("Plan de mission et risque d'audit");
     table(["Priorité","Risque","Comptes / assertions","Non-détection","Travaux"],risks(k).sort((a,b)=>b.score-a.score).map(r=>{const a=auditRisk(r,cs.lvl);return[`${PRIO_L[prio(r.score)]} (${r.prob}x${r.impact})`,`${r.risk}\n${r.why}`,`${r.compte}\n${r.assertion}`,LVL[a.rnd],`${r.proc}\n${a.work} (${a.sample})`];}),{columnStyles:{0:{cellWidth:22},1:{cellWidth:38},2:{cellWidth:36},3:{cellWidth:20}}});}
@@ -1000,8 +1013,9 @@ function bindTeam(){
 }
 function openNewMission(){
   const d=document.getElementById("mission-dlg");
-  document.getElementById("nm-co").innerHTML=keys().map(k=>`<option value="${k}">${esc(state.cos[k].name)}</option>`).join("");
-  const setName=()=>{document.getElementById("nm-name").value=`Audit ${state.cos[document.getElementById("nm-co").value].name} 2025`;};
+  if(!libKeys().length){teamMsg("Créez d'abord une analyse dans l'historique de l'accueil.",true);return;}
+  document.getElementById("nm-co").innerHTML=libKeys().map(k=>`<option value="${k}">${esc(state.cos[k].name)}</option>`).join("");
+  const setName=()=>{document.getElementById("nm-name").value=`Audit ${state.cos[document.getElementById("nm-co").value].name} ${state.cos[document.getElementById("nm-co").value].lastYear||2025}`;};
   setName();document.getElementById("nm-co").onchange=setName;
   document.getElementById("nm-due").value=state.phases[state.phases.length-1].end;
   document.getElementById("nm-err").textContent="";
@@ -1088,7 +1102,185 @@ async function openTask(tid){
 
 document.getElementById("nm-form").onsubmit=createMission;
 document.getElementById("nm-cancel").onclick=()=>{const d=document.getElementById("mission-dlg");d.close?d.close():d.removeAttribute("open");};
-function refreshAll(){ensureState();renderPdfSelect();renderOverview();renderMatrix();renderPlan();renderRadar();renderStress();renderRatios();renderMission();renderData();}
+/* ---------- Bibliothèque d'analyses (historique) ---------- */
+const libKeys=()=>Object.keys(state.cos).sort((a,b)=>(state.cos[b].updatedAt||0)-(state.cos[a].updatedAt||0));
+const ZERO={oil:0,fx:0,demand:0,log:0,carbon:0,rate:0};
+const defEnv=()=>({eco:"",reg:"",geo:"",audit:""});
+const STOREX={mode:"local",db:null,canWrite:null,me:null,unsub:null,loaded:false,localOnly:[],pend:{}};
+function nextColor(){const used=libKeys().map(k=>state.cos[k].color);return PALETTE.find(c=>!used.includes(c))||PALETTE[libKeys().length%PALETTE.length];}
+function setYears(){const a=keys()[0];const ly=a?(+state.cos[a].lastYear||2025):2025;YEARS=[ly-4,ly-3,ly-2,ly-1,ly];}
+function openAnalyses(ids){state.order=ids.filter(k=>state.cos[k]);ui.planCo="all";ui.dataCo=state.order[0];ui.missionCo=state.order[0];save();refreshAll();}
+function closeAnalyses(){state.order=[];save();refreshAll();}
+function touch(k){const co=state.cos[k];if(co){co.updatedAt=Date.now();}}
+function saveCo(k){touch(k);save();if(STOREX.mode==="db"&&STOREX.canWrite!==false&&state.cos[k]){clearTimeout(STOREX.pend[k]);STOREX.pend[k]=setTimeout(()=>writeCo(k),500);}}
+async function writeCo(k){const co=state.cos[k];if(!co||!STOREX.db)return;try{await STOREX.db.doc("analyses/"+k).set({...JSON.parse(JSON.stringify(co)),updatedBy:STOREX.me||""});}catch(e){histMsg(e&&e.code==="quota_exceeded"?"L'historique partagé est plein : supprimez d'anciennes analyses.":e&&e.code==="invalid_argument"?"Vous n'avez pas le droit d'écrire dans l'historique partagé (accès Éditeur nécessaire).":"La sauvegarde partagée a échoué.",true);}}
+async function deleteCo(k){delete state.cos[k];state.order=state.order.filter(x=>x!==k);save();if(STOREX.mode==="db"&&STOREX.db){try{await STOREX.db.doc("analyses/"+k).delete();}catch(e){histMsg("La suppression dans l'historique partagé a échoué.",true);}}refreshAll();}
+function addCo(co,open){const k=co.id||("co"+Date.now().toString(36)+Math.random().toString(36).slice(2,5));delete co.id;
+  state.cos[k]={color:nextColor(),createdAt:Date.now(),updatedAt:Date.now(),mission:defMission(),env:defEnv(),...co};
+  if(STOREX.mode==="db")state.cos[k].createdBy=STOREX.me||"";
+  saveCo(k);if(STOREX.mode==="db")writeCo(k);if(open)openAnalyses([k]);else refreshAll();return k;}
+function loadExample(which){
+  const ks=which==="all"?["snep","arkema","dow"]:[which];const ids=[];
+  ks.forEach(x=>{const ex=clone(EXAMPLE[x]);const existing=libKeys().find(k=>state.cos[k].exampleOf===x);if(existing){ids.push(existing);return;}
+    ids.push(addCo({...ex,exampleOf:x,lastYear:2025,sector:ex.sector||"Chimie"},false));});
+  openAnalyses(ids);histMsg(ks.length>1?"Exemples chargés et ouverts en comparaison.":"Exemple chargé et ouvert.");
+}
+function histMsg(t,err){const m=document.getElementById("hist-msg");if(!m)return;m.className="msg"+(err?" err":"");m.textContent=t;if(!err)setTimeout(()=>{if(m.textContent===t)m.textContent="";},5000);}
+
+/* ---------- Rendu de l'historique ---------- */
+let histSel=new Set(),histQ="";
+function renderHistory(){
+  const all=libKeys();histSel=new Set([...histSel].filter(k=>state.cos[k]));
+  const rows=all.filter(k=>{const c=state.cos[k];return !histQ||(c.name+" "+(c.country||"")+" "+(c.sector||"")).toLowerCase().includes(histQ);});
+  document.getElementById("hist-mode").innerHTML=STOREX.mode==="db"?`<span class="pill good">Historique partagé avec l'équipe</span>${STOREX.canWrite===false?' <span class="small">lecture seule</span>':""}`:`<span class="pill warn">Historique enregistré dans ce navigateur</span>`;
+  const up=document.getElementById("hist-upload");up.hidden=!(STOREX.mode==="db"&&STOREX.localOnly.length&&STOREX.canWrite!==false);
+  if(!up.hidden)up.textContent=`Envoyer mes ${STOREX.localOnly.length} analyse(s) locale(s) dans l'historique partagé`;
+  const t=document.getElementById("hist-table");
+  if(!all.length){t.innerHTML=`<tbody><tr><td class="small" style="padding:18px 8px">Aucune analyse pour l'instant. Cliquez sur « + Nouvelle analyse » ou chargez un exemple.</td></tr></tbody>`;}
+  else t.innerHTML=`<thead><tr><th style="width:28px"><span class="sr">Sélection</span></th><th>Société</th><th>Pays</th><th class="n">Exercice</th><th>Note</th><th class="n">M-score</th><th class="n">Z'</th><th>Verdict</th><th>Mise à jour</th><th></th></tr></thead><tbody>${rows.map(k=>{const c=state.cos[k];
+    let r,be,st;try{withScen(ZERO,()=>{r=rating(k,false);be=beneish(c.data,4);st=stress(k);});}catch(e){}
+    const open=state.order.includes(k);
+    return `<tr class="${open?"row-open":""}"><td><input type="checkbox" data-sel="${k}" ${histSel.has(k)?"checked":""} aria-label="Sélectionner ${esc(c.name)}"></td>
+    <td><b style="color:${c.color}">${esc(c.name)}</b>${c.exampleOf?' <span class="tag">exemple</span>':""}<div class="small">${esc(c.sector||"")}</div></td><td>${esc(c.country||"")}</td><td class="n">${esc(c.lastYear||"")}</td>
+    <td>${r?`<b class="rating ${r.zone}" style="font-size:18px">${r.grade}</b>`:"–"}</td><td class="n">${be?fmt(be.M,2):"–"}</td><td class="n">${st?fmt(st.zb,2):"–"}</td><td>${st?pill(st.verdict,VERD[st.verdict]):""}</td>
+    <td class="small">${c.updatedAt?new Date(c.updatedAt).toLocaleDateString("fr-FR"):""}</td>
+    <td style="white-space:nowrap"><button class="btn small primary" data-openk="${k}">${open?"Ouverte":"Ouvrir"}</button> <button class="btn small" data-pdfk="${k}">PDF</button> <button class="btn small danger" data-delk="${k}" ${STOREX.mode==="db"&&STOREX.canWrite===false?"disabled":""}>Supprimer</button></td></tr>`;}).join("")}</tbody>`;
+  const cmp=document.getElementById("hist-compare");cmp.disabled=histSel.size<2||histSel.size>4;cmp.textContent=`Comparer la sélection (${histSel.size})`;
+  t.querySelectorAll("[data-sel]").forEach(c=>c.onchange=()=>{c.checked?histSel.add(c.dataset.sel):histSel.delete(c.dataset.sel);renderHistory();});
+  t.querySelectorAll("[data-openk]").forEach(b=>b.onclick=()=>{openAnalyses([b.dataset.openk]);document.getElementById("open-section").scrollIntoView({behavior:"smooth"});});
+  t.querySelectorAll("[data-pdfk]").forEach(b=>b.onclick=()=>downloadPdf([b.dataset.pdfk]));
+  t.querySelectorAll("[data-delk]").forEach(b=>b.onclick=()=>{if(b.dataset.c!=="1"){b.dataset.c="1";b.textContent="Confirmer";setTimeout(()=>{if(b.isConnected){b.dataset.c="";b.textContent="Supprimer";}},4000);return;}deleteCo(b.dataset.delk);});
+}
+function renderOpenSection(){
+  const ks=keys(),sec=document.getElementById("open-section");sec.hidden=!ks.length;
+  const bar=document.getElementById("ctxbar");
+  if(!ks.length){bar.innerHTML=`<span class="small">Aucune analyse ouverte.</span> <a href="#accueil" class="small">Choisir dans l'historique</a>`;return;}
+  bar.innerHTML=`<span class="small">${ks.length>1?"Comparaison":"Analyse ouverte"} :</span> ${ks.map(k=>`<span class="chip" style="--co:${col(k)}">${esc(state.cos[k].name)}</span>`).join(" ")} <span class="small">exercice ${YEARS[4]}</span> <button class="btn small" id="ctx-close">Fermer</button>`;
+  document.getElementById("ctx-close").onclick=closeAnalyses;
+  const yrs=new Set(ks.map(k=>state.cos[k].lastYear||2025));
+  document.getElementById("open-title").textContent=ks.length>1?`Comparaison : ${ks.map(k=>state.cos[k].name).join(", ")}`:`Analyse : ${state.cos[ks[0]].name}`;
+  document.getElementById("open-warn").textContent=yrs.size>1?`Attention : les sociétés comparées n'ont pas le même dernier exercice (${[...yrs].join(", ")}). Les graphiques utilisent les années de ${state.cos[ks[0]].name}.`:"";
+}
+
+/* ---------- Import Excel / CSV et modèle ---------- */
+const norm=s=>String(s==null?"":s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g," ").trim();
+async function downloadTemplate(){
+  const m=document.getElementById("hist-msg");
+  if(!window.XLSX){histMsg("Le module Excel ne s'est pas chargé : rechargez la page.",true);return;}
+  const ly=2025;
+  const aoa=[["RiskScope FIDEX5 - modèle d'import des états financiers"],[],["Nom de la société",""],["Pays",""],["Devise (MDH, M€ ou M$)","MDH"],["Secteur",""],["Dernier exercice",ly],[],["Poste (en millions)",ly-4,ly-3,ly-2,ly-1,ly],...FIELDS.map(f=>[f[1],"","","","",""]),[],["Aide : montants en millions de la devise, du plus ancien exercice (colonne B) au plus récent (colonne F). Charges en positif ; résultats négatifs avec un signe moins."]];
+  const ws=XLSX.utils.aoa_to_sheet(aoa);ws["!cols"]=[{wch:42},{wch:13},{wch:13},{wch:13},{wch:13},{wch:13}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Etats financiers");
+  const buf=XLSX.write(wb,{bookType:"xlsx",type:"array"});
+  saveFile("RiskScope-modele-import.xlsx",new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),m);
+}
+function parseRows(rows){
+  const meta={};let hdr=-1;
+  rows.forEach((r,i)=>{const a=norm(r[0]);if(!a)return;
+    if(a.startsWith("nom de la societe")||a==="societe"||a==="nom")meta.name=String(r[1]||"").trim();
+    else if(a.startsWith("pays"))meta.country=String(r[1]||"").trim();
+    else if(a.startsWith("devise")){const v=norm(r[1]);meta.cur=/€|eur/.test(v)?"M€":/\$|usd|dollar/.test(v)?"M$":v?"MDH":undefined;}
+    else if(a.startsWith("secteur"))meta.sector=String(r[1]||"").trim();
+    else if(a.startsWith("dernier exercice")){const y=parseInt(r[1],10);if(y>1990&&y<2100)meta.lastYear=y;}
+    else if(a.startsWith("poste")&&hdr<0){hdr=i;const y=parseInt(r[5],10);if(!meta.lastYear&&y>1990&&y<2100)meta.lastYear=y;}});
+  const data={};let filled=0;
+  const body=hdr>=0?rows.slice(hdr+1):rows;
+  const labels=FIELDS.map(f=>norm(f[1]));
+  let seq=0;
+  body.forEach(r=>{if(!r||!r.length)return;const a=norm(r[0]);let idx=labels.indexOf(a);
+    if(idx<0&&a&&isFinite(parseNum(r[0])))return;
+    if(idx<0){idx=labels.findIndex(l=>a&&(l.startsWith(a)||a.startsWith(l.slice(0,12))));}
+    if(idx<0&&hdr>=0&&seq<FIELDS.length&&a)idx=seq;
+    if(idx<0||data[FIELDS[idx][0]])return;seq=idx+1;
+    const vals=r.slice(1,6).map(v=>typeof v==="number"?v:parseNum(v));
+    if(vals.some(v=>isFinite(v))){data[FIELDS[idx][0]]=vals;filled+=vals.filter(v=>isFinite(v)).length;}});
+  return{meta,data,filled};
+}
+async function importFile(file){
+  const msg=document.getElementById("nf-file-msg");msg.className="msg";msg.textContent="Lecture du fichier…";
+  try{
+    let rows;
+    if(window.XLSX){const buf=await file.arrayBuffer();const wb=XLSX.read(buf,{type:"array"});const ws=wb.Sheets[wb.SheetNames[0]];rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:""});}
+    else{const txt=await file.text();rows=txt.split(/\r?\n/).map(l=>l.split(/;|\t|,(?=\S)/));}
+    const {meta,data,filled}=parseRows(rows);
+    if(meta.name)document.getElementById("nf-name").value=meta.name;
+    if(meta.country)document.getElementById("nf-country").value=meta.country;
+    if(meta.cur)document.getElementById("nf-cur").value=meta.cur;
+    if(meta.sector)document.getElementById("nf-sector").value=meta.sector;
+    if(meta.lastYear){document.getElementById("nf-year").value=meta.lastYear;nfTable(true);}
+    Object.entries(data).forEach(([k,vals])=>vals.forEach((v,t)=>{const el=document.getElementById(`nf-${k}-${t}`);if(el&&isFinite(v))el.value=v;}));
+    msg.className="msg"+(filled?"":" err");
+    msg.textContent=filled?`${filled} montants importés sur ${FIELDS.length*5}. Vérifiez le tableau avant de lancer l'analyse.`:"Aucun montant reconnu : utilisez le modèle Excel de RiskScope.";
+  }catch(e){msg.className="msg err";msg.textContent="Fichier illisible : utilisez le modèle Excel (.xlsx) ou un fichier CSV.";}
+}
+
+/* ---------- Sauvegarde partagée ---------- */
+async function setupStore(){
+  if(!(window.claude&&window.claude.use))return;
+  const [db,user]=await Promise.all([window.claude.use("db").catch(()=>null),window.claude.use("user").catch(()=>null)]);
+  if(!db||!user)return;
+  const me=await user.id();if(!me)return;
+  STOREX.db=db;STOREX.me=me;STOREX.canWrite=await user.can("data.write");
+  const localBefore=libKeys().map(k=>({k,co:clone(state.cos[k])}));
+  STOREX.unsub=db.collection("analyses").onSnapshot(snap=>{
+    const remote={};snap.docs.forEach(d=>{const v=d.data();if(v&&v.data&&v.hyp)remote[d.id]=v;});
+    if(!STOREX.loaded&&!snap.metadata.fromCache){STOREX.loaded=true;STOREX.localOnly=localBefore.filter(x=>!remote[x.k]&&!Object.values(remote).some(r=>r.exampleOf&&r.exampleOf===x.co.exampleOf));}
+    if(STOREX.mode!=="db"){STOREX.mode="db";STOREX.localBackup=clone(state.cos);}
+    Object.keys(STOREX.pend).forEach(k=>{if(state.cos[k]&&remote[k])remote[k]=state.cos[k];});
+    state.cos=remote;state.order=state.order.filter(k=>remote[k]);
+    save();refreshAll();
+  },()=>{histMsg("L'historique partagé est indisponible : les analyses restent dans ce navigateur.",true);});
+}
+async function uploadLocal(){
+  const items=STOREX.localOnly;if(!items.length)return;
+  for(const {k,co} of items){state.cos[k]=co;try{await STOREX.db.doc("analyses/"+k).set({...co,updatedBy:STOREX.me});}catch(e){histMsg("L'envoi a échoué.",true);return;}}
+  STOREX.localOnly=[];histMsg("Analyses locales envoyées dans l'historique partagé.");refreshAll();
+}
+
+/* ---------- Environnement par société ---------- */
+const ENV_F=[["eco","Économique"],["reg","Réglementaire"],["geo","Géopolitique"],["audit","Risque d'audit prioritaire"]];
+function renderEnv(){
+  const ks=keys(),box=document.getElementById("env-root");if(!box)return;
+  if(!ks.length){box.innerHTML="";return;}
+  box.innerHTML=`<div class="card scroll"><table><thead><tr><th></th>${ks.map(k=>`<th style="color:${col(k)}">${esc(state.cos[k].name)}${state.cos[k].country?` (${esc(state.cos[k].country)})`:""}</th>`).join("")}</tr></thead><tbody>${ENV_F.map(([f,l])=>`<tr><th>${l}</th>${ks.map(k=>{const v=(state.cos[k].env||{})[f];return `<td>${v?esc(v):'<span class="small">À compléter</span>'}</td>`;}).join("")}</tr>`).join("")}</tbody></table></div>
+  ${ks.map(k=>{const e=state.cos[k].env||defEnv();return `<div class="card co" style="--co:${col(k)}"><div class="co-head"><span class="co-name">${esc(state.cos[k].name)}</span><span class="co-meta">${esc(state.cos[k].sector||"")}</span></div>
+    <div class="env-grid">${ENV_F.map(([f,l])=>`<label for="env-${k}-${f}">${l}<textarea id="env-${k}-${f}" data-envk="${k}" data-envf="${f}" placeholder="${f==="audit"?"Ex. : continuité d'exploitation":"Faits, chiffres et sources"}">${esc(e[f]||"")}</textarea></label>`).join("")}</div>
+    <div class="actions" style="margin-top:8px"><button class="btn small" data-envai="${k}">Rédiger un brouillon avec l'IA</button><span class="msg" id="env-msg-${k}" role="status"></span></div></div>`;}).join("")}`;
+  box.querySelectorAll("[data-envk]").forEach(t=>t.onchange=()=>{const co=state.cos[t.dataset.envk];co.env=co.env||defEnv();co.env[t.dataset.envf]=t.value.trim();saveCo(t.dataset.envk);renderEnvTableOnly();});
+  box.querySelectorAll("[data-envai]").forEach(b=>{b.hidden=!sampler;b.onclick=()=>envDraft(b.dataset.envai,b);});
+}
+function renderEnvTableOnly(){const y=window.scrollY;renderEnv();window.scrollTo(0,y);}
+async function envDraft(k,b){
+  const co=state.cos[k],m=document.getElementById("env-msg-"+k);if(!sampler)return;
+  b.disabled=true;m.className="msg";m.textContent="Rédaction en cours…";
+  const b4=yr(co.data,4);
+  try{
+    const r=await sampler.json(`Tu aides une équipe d'auditeurs (Master CCA). Rédige en français, pour la société « ${co.name} » (pays : ${co.country||"non précisé"}, secteur : ${co.sector||"non précisé"}, exercice ${co.lastYear||YEARS[4]}, chiffre d'affaires ${b4.ca} ${co.cur}, résultat net ${b4.net} ${co.cur}), une analyse courte de son environnement : économique, réglementaire, géopolitique, et le risque d'audit prioritaire qui en découle. 2 à 3 phrases par rubrique, factuelles ; si tu n'es pas sûr d'un fait récent, dis-le. Réponds uniquement avec un objet JSON : {"eco": string, "reg": string, "geo": string, "audit": string}.`,{modelTier:"default"});
+    co.env=co.env||defEnv();ENV_F.forEach(([f])=>{if(r&&typeof r[f]==="string"&&!co.env[f])co.env[f]=r[f].trim();});
+    saveCo(k);renderEnv();const m2=document.getElementById("env-msg-"+k);if(m2){m2.className="msg";m2.textContent="Brouillon ajouté dans les cases vides : vérifiez chaque fait avant de l'utiliser.";}
+  }catch(e){m.className="msg err";m.textContent=e&&e.code==="not_granted"?"L'assistant n'est pas autorisé.":"La rédaction a échoué : réessayez.";b.disabled=false;}
+}
+
+/* ---------- États vides ---------- */
+const NEED_OPEN=["radar","crashtest","ratios","mission","environnement","assistant","donnees"];
+function applyEmpty(){
+  const none=!keys().length;
+  NEED_OPEN.forEach(id=>{const v=document.getElementById("view-"+id);if(!v)return;
+    let e=v.querySelector(".empty-state");
+    if(!e){e=document.createElement("div");e.className="card empty-state";e.innerHTML=`<h3>Aucune analyse ouverte</h3><p class="small">Ouvrez une analyse depuis l'historique de l'accueil, ou créez-en une nouvelle. Pour comparer plusieurs sociétés, cochez-les dans l'historique puis cliquez sur « Comparer la sélection ».</p><div class="actions"><a class="btn primary" href="#accueil">Aller à l'historique</a></div>`;v.insertBefore(e,v.children[1]||null);}
+    e.hidden=!none;
+    [...v.children].forEach((c,i)=>{if(i===0||c===e||c.classList.contains("guide")||c.classList.contains("keep"))return;c.classList.toggle("is-hidden",none);});
+  });
+}
+
+function alertBar(t){const b=document.getElementById("ctxbar");const s=document.createElement("span");s.className="msg err";s.textContent=t;b.append(s);setTimeout(()=>s.remove(),5000);}
+function refreshAll(){ensureState();setYears();renderHistory();renderOpenSection();renderPdfSelect();renderOverview();renderMatrix();renderPlan();renderRadar();renderStress();renderRatios();renderMission();renderEnv();renderData();applyEmpty();}
+document.getElementById("hist-template").onclick=()=>downloadTemplate();
+document.getElementById("hist-load").onclick=()=>loadExample(document.getElementById("hist-example").value);
+document.getElementById("hist-compare").onclick=()=>{openAnalyses([...histSel]);document.getElementById("open-section").scrollIntoView({behavior:"smooth"});};
+document.getElementById("hist-search").oninput=e=>{histQ=e.target.value.trim().toLowerCase();renderHistory();};
+document.getElementById("hist-export").onclick=()=>saveFile("FIDEX5-historique.csv",new Blob([toCsv(CSV.history())],{type:"text/csv"}),document.getElementById("hist-msg"));
+document.getElementById("hist-upload").onclick=uploadLocal;
 function route(){
   const tabs=["accueil","radar","crashtest","ratios","mission","environnement","equipe","assistant","donnees"];
   const h=location.hash.slice(1);const t=tabs.includes(h)?h:"accueil";
@@ -1096,4 +1288,4 @@ function route(){
   document.querySelectorAll("nav.tabs a").forEach(a=>{if(a.dataset.tab===t)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current");});
 }
 window.addEventListener("hashchange",route);
-injectGuides();renderSliders();setupDataTools();refreshAll();route();setupAssistant();setupTeam();
+injectGuides();renderSliders();setupDataTools();refreshAll();route();setupAssistant();setupStore();setupTeam();

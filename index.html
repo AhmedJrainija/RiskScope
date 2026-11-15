@@ -28,24 +28,43 @@
     <a href="#donnees" data-tab="donnees">Données</a>
   </nav>
 </header>
+<div class="ctxbar" id="ctxbar"></div>
 
 <main>
   <!-- ACCUEIL -->
   <section class="view" id="view-accueil">
     <div class="hero">
-      <h2>Analysez les risques d'une entreprise en quelques minutes</h2>
-      <p>Saisissez ou collez les états financiers de 5 exercices : RiskScope calcule le Beneish M-score, l'Altman Z', le stress test et génère le plan de mission. Les rapports se téléchargent en PDF.</p>
+      <h2>Analysez les risques de n'importe quelle société</h2>
+      <p>Importez les états financiers de 5 exercices (modèle Excel, copier-coller ou saisie) : RiskScope calcule le Beneish M-score, l'Altman Z', la notation et le stress test, puis génère le plan de mission. Chaque analyse est conservée dans l'historique.</p>
       <div class="actions">
-        <button class="btn primary" id="open-new">+ Analyser une nouvelle société</button>
+        <button class="btn primary" id="open-new">+ Nouvelle analyse</button>
+        <button class="btn" id="hist-template">Télécharger le modèle Excel</button>
+        <label for="hist-example" class="small">Exemple :</label>
+        <select id="hist-example"><option value="all">SNEP, Arkema et Dow (comparaison)</option><option value="snep">SNEP (Maroc)</option><option value="arkema">Arkema (France)</option><option value="dow">Dow (États-Unis)</option></select>
+        <button class="btn" id="hist-load">Charger</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-head"><div><h3>Historique des analyses</h3><div id="hist-mode" style="margin-top:4px"></div></div>
+        <div class="actions"><input type="text" id="hist-search" placeholder="Rechercher une société" aria-label="Rechercher une société"><button class="btn dark" id="hist-compare" disabled>Comparer la sélection</button><button class="btn small" id="hist-export">Historique en CSV</button></div></div>
+      <button class="btn small" id="hist-upload" hidden></button>
+      <div class="scroll" style="margin-top:10px"><table id="hist-table"></table></div>
+      <p class="small">Cochez 2 à 4 analyses pour les comparer. Les notes et scores de l'historique sont calculés sans scénario de crise.</p>
+      <span class="msg" id="hist-msg" role="status"></span>
+    </div>
+    <div id="open-section" class="open-section" hidden>
+    <div class="section-head">
+      <div><h2 style="font-size:22px" id="open-title">Analyse</h2><p class="small" id="open-warn" style="color:var(--warn)"></p></div>
+      <div class="actions">
         <label for="pdf-co" class="small">Rapport :</label>
         <select id="pdf-co"></select>
         <button class="btn dark" id="pdf-btn">Télécharger le rapport PDF</button>
-        <button class="btn" id="csv-all">Exporter les résultats (CSV)</button>
+        <button class="btn" id="csv-all">Résultats en CSV</button>
         <span class="msg" id="pdf-msg" role="status"></span>
       </div>
     </div>
     <div>
-      <h2 style="font-size:20px">Vue d'ensemble</h2>
+      <h3 style="font-size:17px">Vue d'ensemble</h3>
       <p class="intro">Scénario de crise actif : <b id="scenario-label">aucun</b>.</p>
     </div>
     <div class="grid3" id="overview"></div>
@@ -68,6 +87,7 @@
         <div class="exp"><button class="btn small" data-csv="plan">Données CSV</button></div>
       </div>
     </div>
+    </div>
   </section>
 
   <!-- RADAR -->
@@ -85,7 +105,7 @@
       <div class="scroll"><table id="beneish-table"></table></div>
       <p class="small">M = −4,84 + 0,920 DSRI + 0,528 GMI + 0,404 AQI + 0,892 SGI + 0,115 DEPI − 0,172 SGAI + 4,679 TATA − 0,327 LVGI. Au-dessus de −1,78 : manipulation probable ; entre −2,22 et −1,78 : zone grise.</p>
       <div id="beneish-interp"></div>
-      <div class="exp"><button class="btn small" data-csv="beneish">Données CSV (2022-2025)</button></div>
+      <div class="exp"><button class="btn small" data-csv="beneish">Données CSV</button></div>
     </div>
     <div class="card">
       <h3>Loi de Benford : premier chiffre des montants</h3>
@@ -174,20 +194,9 @@
   <section class="view" id="view-environnement">
     <div>
       <h2>Environnement économique, réglementaire et géopolitique</h2>
-      <p class="intro">Synthèse de l'analyse documentaire du groupe (novembre 2026). Les trois entreprises sont au creux du cycle chimique, mais leurs risques d'audit dominants diffèrent.</p>
+      <p class="intro">Une fiche par société : complétez-la à partir de vos recherches (rapports annuels, presse, réglementation) ou demandez un brouillon à l'assistant IA, puis vérifiez chaque fait. Ces fiches justifient les hypothèses du CrashTest et les risques du plan de mission.</p>
     </div>
-    <div class="card scroll">
-      <table>
-        <thead><tr><th></th><th style="color:var(--c1)">SNEP (Maroc)</th><th style="color:var(--c2)">Arkema (France)</th><th style="color:var(--c3)">Dow (États-Unis)</th></tr></thead>
-        <tbody>
-          <tr><th>Économique</th><td>Surcapacité mondiale de PVC et importations à bas prix ; nouvelles unités (90 000 t de PVC) encore en stabilisation ; approvisionnement en éthylène perturbé.</td><td>Demande faible aux États-Unis et en Europe ; cycle bas des acryliques ; dollar faible (effet change −2,9 % sur les ventes 2025).</td><td>Surcapacités en Asie et en Europe ; marges au plus bas ; dividende réduit de 50 %, projet Path2Zero reporté de deux ans.</td></tr>
-          <tr><th>Réglementaire</th><td>Droits antidumping sur le PVC américain (24,88 %) et égyptien (jusqu'à 92,19 %).</td><td>PFAS à Pierre-Bénite (site Seveso seuil haut), assignation en justice de janvier 2026 ; quotas carbone européens.</td><td>Fermeture de trois actifs européens ; 23 % des émissions directes sous quotas européens ; restructuration de 1,1 à 1,5 Md$.</td></tr>
-          <tr><th>Géopolitique</th><td>Éthylène importé par voie maritime ; prix fixés sur le marché mondial ; protection dépendante de décisions publiques révisables.</td><td>Un tiers des ventes en Amérique du Nord ; investissements en Chine.</td><td>60 % des ventes hors États-Unis et Canada ; coentreprises au Moyen-Orient (Sadara, EQUATE).</td></tr>
-          <tr><th>Risque d'audit prioritaire</th><td><span class="pill crit">Continuité d'exploitation</span></td><td><span class="pill warn">Provisions et litiges environnementaux</span></td><td><span class="pill crit">Restructuration et dépréciations</span></td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="small">Analyse détaillée et sources : document « Environnement et hypothèses de risque » du groupe.</p>
+    <div id="env-root" style="display:grid;gap:14px"></div>
   </section>
 
   <!-- EQUIPE -->
@@ -235,26 +244,19 @@
       <p class="small">À justifier par le rapport annuel : part des matières pétrochimiques dans le coût des ventes, exposition au dollar, émissions de CO₂, etc.</p>
       <div class="scroll"><table class="data-table" id="hyp-table"></table></div>
     </div>
-    <div class="card">
-      <h3>Sources et retraitements (sociétés d'origine)</h3>
-      <div class="scroll"><table>
-        <thead><tr><th>Entreprise</th><th>Sources</th><th>Retraitements à connaître</th></tr></thead>
-        <tbody>
-          <tr><td><b style="color:var(--c1)">SNEP</b></td><td>Comptes sociaux publiés sur le site de l'AMMC : états financiers 2021, 2022, 2025 et rapport financier annuel 2024 (snep.ma).</td><td>Coût des ventes = achats consommés de matières et fournitures. Frais généraux = autres charges externes + impôts et taxes + charges de personnel. Passif circulant = dettes du passif circulant + trésorerie-passif (et provisions). Actif circulant 2022 estimé. Flux d'exploitation estimés : résultat net + dotations − variation (clients + stocks) + variation des dettes circulantes ; 2021 sans la variation des dettes.</td></tr>
-          <tr><td><b style="color:var(--c2)">Arkema</b></td><td>Communiqués de résultats annuels (Business Wire), données S&amp;P Global reprises par stockanalysis.com et abcbourse.com.</td><td>Résultat d'exploitation IFRS publié (2021 gonflé par la cession du PMMA). Charges d'intérêts = résultat financier. Réserves = « primes et réserves ». Capitaux propres y compris minoritaires.</td></tr>
-          <tr><td><b style="color:var(--c3)">Dow</b></td><td>Rapports 10-K (SEC) via edgar.tools, stockanalysis.com, kalkinemedia.com et barchart.com.</td><td>Résultat d'exploitation calculé par S&amp;P. Résultat net part du groupe. Flux d'exploitation totaux. Capitaux propres y compris minoritaires.</td></tr>
-        </tbody>
-      </table></div>
+    <div class="card" id="src-card" hidden>
+      <h3>Sources et retraitements</h3>
+      <div id="src-body"></div>
     </div>
-    <div class="card">
-      <h3>Sauvegarder ou partager entre membres du groupe</h3>
+    <div class="card keep">
+      <h3>Sauvegarder, importer ou partager</h3>
       <div class="toolbar">
         <button class="btn dark" id="copy-json">Copier toutes les données</button>
         <button class="btn" id="import-json">Importer le texte collé</button>
-        <button class="btn" id="reset-data">Revenir aux chiffres publiés</button>
+        <button class="btn" id="reset-data">Charger les exemples</button>
         <span class="msg" id="data-msg" role="status"></span>
       </div>
-      <label for="json-area" class="small" style="display:block;margin-top:10px">Collez ici les données copiées par un autre membre :</label>
+      <label for="json-area" class="small" style="display:block;margin-top:10px">Collez ici des analyses copiées depuis une autre version de RiskScope :</label>
       <textarea id="json-area" spellcheck="false"></textarea>
     </div>
   </section>
@@ -263,18 +265,22 @@
 
 <dialog id="new-dlg" aria-labelledby="new-title">
   <form id="new-form" method="dialog">
-    <div class="dlg-head"><h2 id="new-title" style="font-size:20px">Analyser une nouvelle société</h2><button type="button" class="btn small" id="new-close">Fermer</button></div>
+    <div class="dlg-head"><h2 id="new-title" style="font-size:20px">Nouvelle analyse</h2><button type="button" class="btn small" id="new-close">Fermer</button></div>
     <div class="dlg-body">
       <div class="fields">
         <label for="nf-name">Nom de la société<input type="text" id="nf-name" required placeholder="ex. Maroc Telecom"></label>
         <label for="nf-country">Pays<input type="text" id="nf-country" placeholder="ex. Maroc"></label>
+        <label for="nf-sector">Secteur<input type="text" id="nf-sector" placeholder="ex. Télécommunications"></label>
+        <label for="nf-year">Dernier exercice<input type="text" id="nf-year" inputmode="numeric" value="2025"></label>
         <label for="nf-cur">Devise de publication
           <select id="nf-cur"><option value="MDH">MDH (millions de dirhams)</option><option value="M€">M€ (millions d'euros)</option><option value="M$">M$ (millions de dollars)</option></select>
         </label>
       </div>
-      <details open>
-        <summary>Option rapide : coller depuis Excel</summary>
-        <p class="small">Copiez dans Excel 17 lignes (dans l'ordre du tableau ci-dessous) et 5 colonnes de 2021 à 2025, avec ou sans la colonne des libellés, puis collez ici.</p>
+      <div class="import-box"><b>Importer un fichier</b> <span class="small">Modèle Excel de RiskScope (.xlsx) ou fichier CSV</span>
+        <div class="actions" style="margin-top:6px"><input type="file" id="nf-file" accept=".xlsx,.xls,.csv" aria-label="Fichier à importer"><button type="button" class="btn small" id="nf-template">Télécharger le modèle Excel</button></div><span class="msg" id="nf-file-msg" role="status"></span></div>
+      <details>
+        <summary>Ou coller depuis Excel</summary>
+        <p class="small">Copiez dans Excel 17 lignes (dans l'ordre du tableau ci-dessous) et 5 colonnes, du plus ancien au plus récent exercice, avec ou sans la colonne des libellés, puis collez ici.</p>
         <textarea id="nf-paste" placeholder="Chiffre d'affaires&#9;1000&#9;1100&#9;1050&#9;980&#9;1020"></textarea>
         <div class="toolbar" style="margin-top:6px"><button type="button" class="btn small" id="nf-fill">Remplir le tableau</button><span class="msg" id="nf-paste-msg" role="status"></span></div>
       </details>
@@ -314,6 +320,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="app.js"></script>
 </body>

@@ -175,5 +175,16 @@ input[type=date]{border:1px solid var(--line);border-radius:8px;padding:6px 8px;
 .donts{background:var(--crit-bg);border-radius:10px;padding:10px 12px}
 .dlg-body textarea{background:#fff;font:13.5px var(--body);min-height:70px}
 .dos textarea,.donts textarea{min-height:130px}
+.ctxbar{max-width:1180px;margin:0 auto;padding:10px 16px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.is-hidden{display:none!important}
+.row-open td{background:var(--accent-soft)}
+.open-section{display:grid;gap:18px;border-top:2px solid var(--line);padding-top:18px}
+.open-section[hidden]{display:none}
+.env-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:10px}
+.env-grid label{display:grid;gap:4px;font-size:13px;font-weight:600}
+.env-grid textarea{background:#fff;font:13.5px var(--body);min-height:90px}
+.import-box{background:var(--soft);border:1px dashed var(--accent);border-radius:10px;padding:12px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+#hist-search{min-width:200px}
 footer{max-width:1180px;margin:0 auto;padding:0 16px 32px;font-size:12px;color:var(--muted)}
 @media (prefers-reduced-motion:no-preference){.bar-fill{transition:width .25s,left .25s}}
