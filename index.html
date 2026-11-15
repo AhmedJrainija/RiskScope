@@ -228,6 +228,7 @@
       <h2>Assistant IA de l'auditeur</h2>
       <p class="intro">Posez une question sur les sociétés analysées : l'assistant reçoit les chiffres, les scores, le scénario de crise et le plan de mission affichés dans RiskScope. Vérifiez toujours ses réponses.</p>
     </div>
+    <div class="card keep" id="api-card" hidden></div>
     <div class="card" style="display:grid;gap:12px">
       <div class="chips" id="ai-chips"></div>
       <div class="chat" id="chat" aria-live="polite"></div>
@@ -302,7 +303,7 @@
           <div class="actions" style="margin-top:8px"><input type="file" id="nf-pdf" accept="application/pdf,.pdf" multiple aria-label="Rapports annuels en PDF"><button type="button" class="btn small" id="nf-pdf-stop" hidden>Arrêter</button></div>
           <span class="msg" id="nf-pdf-msg" role="status"></span>
         </div>
-        <p class="small" id="nf-pdf-off" hidden>La lecture par l'IA fonctionne dans la version publiée sur claude.ai. Ici, utilisez l'analyse rapide ou l'analyse complète.</p>
+        <p class="small" id="nf-pdf-off" hidden>La lecture par l'IA fonctionne sur claude.ai, ou ailleurs avec une clé API (onglet Assistant IA). Sinon, utilisez l'analyse rapide ou l'analyse complète.</p>
       </div>
       <div class="mode-panel" data-panel="quick">
         <p class="small">Les 12 chiffres essentiels, en millions, pour le dernier exercice et le précédent. Le M-score de Beneish et la loi de Benford demandent les 17 postes : ils seront marqués « non calculé », et vous pourrez compléter plus tard dans l'onglet Données.</p>

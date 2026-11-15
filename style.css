@@ -79,7 +79,7 @@ td.n,th.n{text-align:right}
 .btn.dark{background:var(--ink);color:#fff;border-color:var(--ink)}
 .btn.small{padding:4px 10px;font-size:12.5px}
 .btn.danger{color:var(--crit)}
-select,input[type=text]{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:7px 10px;font:14px var(--body)}
+select,input[type=text],input[type=password]{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:7px 10px;font:14px var(--body)}
 .row{display:flex;justify-content:space-between;gap:8px;font-size:13.5px;padding:5px 0;border-bottom:1px dashed var(--line)}
 .row:last-child{border-bottom:0}
 .delta-neg{color:var(--crit)}.delta-pos{color:var(--good)}

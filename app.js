@@ -362,6 +362,7 @@ ${chosen.map(p=>`--- Page ${p.n} ---\n${p.t}`).join("\n")}`;
     else if(e&&e.code==="prompt_too_large")msg("Le rapport est trop volumineux : découpez le PDF pour ne garder que les états financiers.",true);
     else if(e&&e.code==="invalid_json")msg("L'IA n'a pas renvoyé de chiffres exploitables : réessayez.",true);
     else if(e&&e.code==="rate_limited")msg("Limite d'usage atteinte : réessayez plus tard.",true);
+    else if(e&&e.api)msg(e.message,true);
     else msg("La lecture du PDF a échoué : vérifiez le fichier, ou utilisez l'analyse rapide.",true);
   }finally{stop.hidden=true;pdfCtl=null;}
 }
@@ -459,6 +460,61 @@ function renderPlanOnly(){renderPlan();}
 
 /* ---------- Assistant IA ---------- */
 let sampler=null,aiTurns=[],aiCtl=null;
+/* ---------- IA hors claude.ai : clé API personnelle (appel direct depuis le navigateur) ---------- */
+const API_STORE="riskscope-apikey";
+const API_MODELS=[["claude-sonnet-5-5","Claude Sonnet 5.5 (précis, recommandé)"],["claude-haiku-5-5","Claude Haiku 5.5 (rapide, économique)"]];
+function apiCfg(){try{const o=JSON.parse(localStorage.getItem(API_STORE)||"{}");return{key:o.key||"",model:o.model||API_MODELS[0][0]};}catch(e){return{key:"",model:API_MODELS[0][0]};}}
+function apiSave(o){try{if(o)localStorage.setItem(API_STORE,JSON.stringify(o));else localStorage.removeItem(API_STORE);return true;}catch(e){return false;}}
+function apiSampler(key,model){
+  async function call(messages,{signal,onText,max=2048}={}){
+    const msgs=[];messages.forEach(m=>{const c=String(m.content);if(msgs.length&&msgs[msgs.length-1].role===m.role)msgs[msgs.length-1].content+="\n\n"+c;else msgs.push({role:m.role,content:c});});
+    let res;
+    try{res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",signal,headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model,max_tokens:max,messages:msgs,stream:!!onText})});}
+    catch(e){const er=new Error(e&&e.name==="AbortError"?"Arrêté.":"Connexion à l'API impossible (réseau ou blocage du navigateur).");er.code=e&&e.name==="AbortError"?"cancelled":"network";er.api=true;throw er;}
+    if(!res.ok){let d="";try{d=(await res.json()).error.message;}catch(_){}
+      const er=new Error(res.status===401?"Clé API refusée : vérifiez-la dans la carte « Clé API ».":res.status===429?"Limite de débit atteinte : patientez une minute.":res.status===400&&/credit/i.test(d)?"Crédit API épuisé : rechargez votre compte sur console.anthropic.com.":res.status===404?"Modèle indisponible pour cette clé : choisissez-en un autre.":`Erreur de l'API (${res.status})${d?" : "+d:""}`);
+      er.api=true;er.code=res.status===429?"rate_limited":"api_error";er.status=res.status;throw er;}
+    if(!onText){const j=await res.json();return{text:(j.content||[]).filter(b=>b.type==="text").map(b=>b.text).join(""),truncated:j.stop_reason==="max_tokens"};}
+    const rd=res.body.getReader(),dec=new TextDecoder();let buf="",text="",stop=null;
+    try{
+      for(;;){const {done,value}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;
+        while((i=buf.indexOf("\n"))>=0){const ln=buf.slice(0,i).trim();buf=buf.slice(i+1);if(!ln.startsWith("data:"))continue;let ev;try{ev=JSON.parse(ln.slice(5));}catch(_){continue;}
+          if(ev.type==="content_block_delta"&&ev.delta&&ev.delta.type==="text_delta"){text+=ev.delta.text;onText({text});}
+          else if(ev.type==="message_delta"&&ev.delta)stop=ev.delta.stop_reason;
+          else if(ev.type==="error"){const er=new Error((ev.error&&ev.error.message)||"Erreur de l'API");er.api=true;er.code="api_error";er.text=text;throw er;}}}
+    }catch(e){if(e&&e.name==="AbortError"){const er=new Error("Arrêté.");er.code="cancelled";er.text=text;throw er;}throw e;}
+    return{text,truncated:stop==="max_tokens"};
+  }
+  const s=(messages,opt={})=>call(messages,opt);
+  s.json=async(prompt,opt={})=>{const {text}=await call([{role:"user",content:prompt+"\n\nRéponds uniquement avec l'objet JSON demandé, sans aucun texte autour."}],{signal:opt.signal,max:8000});
+    const t=text.replace(/```(?:json)?/g,"");const a=t.indexOf("{"),b=t.lastIndexOf("}");if(a<0||b<a)throw new Error("Réponse de l'IA illisible : réessayez.");return JSON.parse(t.slice(a,b+1));};
+  s.viaApi=true;s.model=model;return s;
+}
+function renderApiCard(){
+  const box=document.getElementById("api-card");if(!box)return;
+  if(sampler&&!sampler.viaApi){box.hidden=true;return;}
+  box.hidden=false;const c=apiCfg();
+  box.innerHTML=`<div class="section-head"><h3>Activer l'IA hors de claude.ai (clé API)</h3>${c.key?`<span class="pill good">Clé enregistrée</span>`:`<span class="pill na">Aucune clé</span>`}</div>
+  <p class="small">Sur GitHub ou en local, l'IA (analyse par société, lecture des PDF, assistant, environnement) utilise votre propre clé API Claude, créée sur console.anthropic.com. Elle reste uniquement dans ce navigateur et chaque appel est facturé sur votre compte Anthropic. <b>Ne mettez jamais la clé dans le code ni sur GitHub.</b></p>
+  <div class="fields" style="margin-top:8px">
+    <label>Clé API<input type="password" id="api-key" autocomplete="off" placeholder="${c.key?"•••• "+esc(c.key.slice(-4)):"sk-ant-…"}"></label>
+    <label>Modèle<select id="api-model">${API_MODELS.map(([v,l])=>`<option value="${v}" ${v===c.model?"selected":""}>${l}</option>`).join("")}</select></label>
+  </div>
+  <div class="actions" style="margin-top:10px"><button class="btn primary" id="api-save">Enregistrer et tester</button>${c.key?`<button class="btn small" id="api-del">Effacer la clé</button>`:""}<span class="msg" id="api-msg" role="status"></span></div>`;
+  const m=document.getElementById("api-msg");
+  document.getElementById("api-model").onchange=e=>{if(c.key){apiSave({key:c.key,model:e.target.value});window.__aiKeyReady&&window.__aiKeyReady();}};
+  document.getElementById("api-save").onclick=async()=>{
+    const key=(document.getElementById("api-key").value.trim())||c.key,model=document.getElementById("api-model").value;
+    if(!key){m.className="msg err";m.textContent="Collez d'abord votre clé API.";return;}
+    m.className="msg";m.textContent="Test de la clé…";
+    try{await apiSampler(key,model)([{role:"user",content:"Réponds seulement : OK"}],{max:5});
+      if(!apiSave({key,model})){m.className="msg err";m.textContent="Ce navigateur bloque l'enregistrement local : la clé ne sera gardée que pour cette visite.";}
+      window.__aiKeyReady&&window.__aiKeyReady({key,model});
+    }catch(e){m.className="msg err";m.textContent=e.message||"La clé n'a pas fonctionné.";}
+  };
+  const del=document.getElementById("api-del");if(del)del.onclick=()=>{apiSave(null);sampler=null;window.__aiKeyOff&&window.__aiKeyOff();renderApiCard();renderAIBits();renderEnv();};
+}
+
 const AI_SUGG=["Explique la note de risque de la société ouverte","Rédige la conclusion du plan de mission","Compare les sociétés ouvertes en 5 points","Quels contrôles faut-il prioriser ?","Explique le Beneish M-score simplement"];
 function aiContext(){
   const o={scenario:scenActive()?{nom:scenName,...scen}:"aucun",annee_en_cours:CUR_YEAR,prevision_incluse:keys().some(fcActive),societes:keys().map(k=>{const co=state.cos[k],d=D(k),be=beneish(d,4),be24=beneish(d,3),st=stress(k),r=rating(k,false),mt=materiality(k),cs=ciScore(k);
@@ -479,8 +535,14 @@ function setupAssistant(){
   document.getElementById("ai-chips").innerHTML=AI_SUGG.map((s,i)=>`<button class="btn small" data-i="${i}">${esc(s)}</button>`).join("");
   document.querySelectorAll("#ai-chips button").forEach(b=>b.onclick=()=>{inp.value=AI_SUGG[+b.dataset.i];ask();});
   const off=msg=>{st.textContent=msg;send.disabled=true;inp.disabled=true;document.querySelectorAll("#ai-chips button").forEach(b=>b.disabled=true);};
-  if(!(window.claude&&window.claude.use)){off("L'assistant fonctionne dans la version publiée sur Claude (claude.ai). Sur un hébergement externe, il nécessite un serveur (niveau 3).");return;}
-  window.claude.use("sample").then(s=>{if(!s){off("L'assistant n'est pas disponible dans cet affichage.");return;}sampler=s;renderEnv();renderAIBits();autoAI();st.textContent="Prêt. La première question vous demandera d'autoriser l'assistant (il utilise votre compte Claude).";}).catch(()=>off("L'assistant n'est pas disponible dans cet affichage."));
+  const chipsOn=v=>document.querySelectorAll("#ai-chips button").forEach(b=>b.disabled=!v);
+  const ready=(s,txt)=>{sampler=s;st.textContent=txt;send.disabled=false;inp.disabled=false;chipsOn(true);AITRIED.clear();renderApiCard();renderEnv();renderAIBits();autoAI();};
+  const tryKey=o=>{const c=o||apiCfg();if(!c.key)return false;const nm=(API_MODELS.find(x=>x[0]===c.model)||[0,c.model])[1];ready(apiSampler(c.key,c.model),`Prêt. L'IA utilise votre clé API (${nm}) : chaque question est facturée sur votre compte Anthropic.`);return true;};
+  const noAI="Hors de claude.ai : ajoutez votre clé API Claude dans la carte ci-dessus pour activer l'IA.";
+  window.__aiKeyReady=tryKey;window.__aiKeyOff=()=>off(noAI);
+  const fallback=()=>{if(!tryKey())off(noAI);renderApiCard();};
+  if(!(window.claude&&window.claude.use)){fallback();}
+  else window.claude.use("sample").then(s=>{if(!s){fallback();return;}ready(s,"Prêt. La première question vous demandera d'autoriser l'assistant (il utilise votre compte Claude).");}).catch(fallback);
   async function ask(){
     const q=inp.value.trim();if(!q||!sampler)return;
     if(!keys().length){st.textContent="Ouvrez d'abord une analyse depuis l'historique.";return;}
@@ -497,6 +559,7 @@ function setupAssistant(){
       if(e&&e.text)bub.innerHTML=mdLite(e.text);else bub.remove();
       if(code==="cancelled"){st.textContent="Réponse arrêtée.";}
       else if(code==="not_granted"||code==="sampling_disabled"||code==="not_declared"||code==="capability_disabled"||code==="capability_removed"){off("L'assistant n'est pas autorisé pour ce compte ou cet affichage.");}
+      else if(e&&e.api&&code!=="rate_limited"){st.textContent=e.message;}
       else if(code==="rate_limited"){st.textContent="Trop de questions d'un coup ou limite d'usage atteinte : réessayez plus tard.";}
       else if(code==="refused"){st.textContent="L'assistant n'a pas pu répondre à cette question : reformulez-la.";}
       else{st.textContent="La réponse a été interrompue : réessayez.";}
@@ -582,6 +645,7 @@ assistant:{t:"Comment utiliser l'assistant IA",steps:[
  "Cliquez sur une question proposée ou écrivez la vôtre, puis « Envoyer » (ou Entrée).",
  "L'assistant reçoit les chiffres, les scores, la note, le seuil, le risque lié au contrôle et le scénario de crise affichés dans RiskScope : il répond à partir de ces données.",
  "Il peut expliquer un résultat, comparer les sociétés ou rédiger une conclusion. Relisez toujours ses réponses : une IA peut se tromper.",
+ "<b>Hors de claude.ai</b> (GitHub, fichier local) : collez votre clé API Claude (console.anthropic.com) dans la carte « Activer l'IA ». Elle reste dans ce navigateur, n'est jamais envoyée ailleurs qu'à l'API d'Anthropic, et chaque appel est facturé sur votre compte. Ne la mettez jamais dans le code.",
  "La première question demande votre autorisation : l'assistant utilise votre compte Claude. Il fonctionne dans la version publiée sur claude.ai."]},
 donnees:{t:"Comment saisir et partager les données",steps:[
  "Choisissez la société en haut à droite. Les montants sont en millions de la devise de publication (MDH, M€ ou M$).",
@@ -1265,7 +1329,7 @@ Signification : rawShare = part du coût des ventes liée aux matières premièr
     const env=r.environnement||{};c.env=c.env||defEnv();ENV_F.forEach(([f])=>{if(!c.env[f]&&typeof env[f]==="string")c.env[f]=env[f].trim().slice(0,800);});
     AIST[k]="ok";saveCo(k);refreshAll();
   }catch(e){
-    const code=e&&e.code;AIST[k]="error:"+(code==="not_granted"?"L'IA n'est pas autorisée sur ce compte.":code==="rate_limited"?"Limite d'usage atteinte : réessayez plus tard.":"L'analyse IA a échoué : réessayez.");
+    const code=e&&e.code;AIST[k]="error:"+(code==="not_granted"?"L'IA n'est pas autorisée sur ce compte.":code==="rate_limited"?"Limite d'usage atteinte : réessayez plus tard.":e&&e.api?e.message:"L'analyse IA a échoué : réessayez.");
     renderAIBits();
   }
 }
@@ -1273,7 +1337,7 @@ function aiBadge(k){const s=AIST[k],c=state.cos[k];
   if(s==="loading")return `<span class="pill warn">Analyse IA en cours…</span>`;
   if(s&&s.startsWith("error:"))return `<span class="pill crit">${esc(s.slice(6))}</span>`;
   if(c.ai)return `<span class="pill good">Analyse IA ${c.ai.year} · ${new Date(c.ai.at).toLocaleDateString("fr-FR")}</span>`;
-  return sampler?`<span class="pill na">Analyse IA non lancée</span>`:`<span class="pill na">Analyse IA disponible sur claude.ai</span>`;}
+  return sampler?`<span class="pill na">Analyse IA non lancée</span>`:`<span class="pill na">Analyse IA : sur claude.ai ou avec une clé API (onglet Assistant IA)</span>`;}
 function vigilPoints(k){const c=state.cos[k];
   if(c.ai&&c.ai.points&&c.ai.points.length)return c.ai.points.map(p=>({t:p.titre,d:p.detail,a:p.compte,src:"ia"}));
   return risks(k).sort((a,b)=>b.score-a.score).slice(0,5).map(r=>({t:r.risk,d:`${r.why}. ${r.proc}.`,a:r.compte,src:"calc"}));}
