@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RiskScope FIDEX5</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="wordmark">FIDEX<span>5</span></div>
+    <div class="sub">Audit &amp; Conseil · RiskScope, l'analyse des risques inhérents</div>
+    <button class="btn dark small present-btn" id="present">▶ Présenter</button>
+  </div>
+  <nav class="tabs" aria-label="Onglets">
+    <a href="#accueil" data-tab="accueil">Accueil</a>
+    <a href="#radar" data-tab="radar">Fraud Radar</a>
+    <a href="#crashtest" data-tab="crashtest">CrashTest</a>
+    <a href="#ratios" data-tab="ratios">Ratios et notation</a>
+    <a href="#mission" data-tab="mission">Mission</a>
+    <a href="#environnement" data-tab="environnement">Environnement</a>
+    <a href="#equipe" data-tab="equipe">Équipe et tâches</a>
+    <a href="#assistant" data-tab="assistant">Assistant IA</a>
+    <a href="#donnees" data-tab="donnees">Données</a>
+  </nav>
+</header>
+
+<main>
+  <!-- ACCUEIL -->
+  <section class="view" id="view-accueil">
+    <div class="hero">
+      <h2>Analysez les risques d'une entreprise en quelques minutes</h2>
+      <p>Saisissez ou collez les états financiers de 5 exercices : RiskScope calcule le Beneish M-score, l'Altman Z', le stress test et génère le plan de mission. Les rapports se téléchargent en PDF.</p>
+      <div class="actions">
+        <button class="btn primary" id="open-new">+ Analyser une nouvelle société</button>
+        <label for="pdf-co" class="small">Rapport :</label>
+        <select id="pdf-co"></select>
+        <button class="btn dark" id="pdf-btn">Télécharger le rapport PDF</button>
+        <button class="btn" id="csv-all">Exporter les résultats (CSV)</button>
+        <span class="msg" id="pdf-msg" role="status"></span>
+      </div>
+    </div>
+    <div>
+      <h2 style="font-size:20px">Vue d'ensemble</h2>
+      <p class="intro">Scénario de crise actif : <b id="scenario-label">aucun</b>.</p>
+    </div>
+    <div class="grid3" id="overview"></div>
+    <div class="grid2">
+      <div class="card">
+        <h3>Matrice des risques inhérents</h3>
+        <p class="small">Probabilité × impact, de 1 à 5. Les positions bougent avec les données et le scénario de crise.</p>
+        <div class="matrix" id="matrix"></div>
+        <div class="legend" id="legend"></div>
+        <div id="matrix-interp"></div>
+      </div>
+      <div class="card">
+        <div class="section-head">
+          <h3>Plan de mission généré</h3>
+          <div class="seg" id="plan-filter" role="group" aria-label="Filtrer par entreprise"></div>
+        </div>
+        <p class="small">Classé par score (probabilité × impact). Priorité élevée ≥ 15, moyenne ≥ 8.</p>
+        <div class="scroll"><table id="plan"></table></div>
+        <div id="plan-interp"></div>
+        <div class="exp"><button class="btn small" data-csv="plan">Données CSV</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RADAR -->
+  <section class="view" id="view-radar">
+    <div class="section-head">
+      <div>
+        <h2>Fraud Radar : les risques venant des comptes</h2>
+        <p class="intro">Beneish M-score (8 indices, seuil −1,78), loi de Benford sur les montants publiés, et ratios d'alerte. Plus une zone du radar est étendue, plus le poste mérite des tests approfondis.</p>
+      </div>
+      <div class="seg" id="year-seg" role="group" aria-label="Exercice analysé"></div>
+    </div>
+    <div class="grid3" id="radar-cards"></div>
+    <div class="card">
+      <h3>Détail des 8 indices Beneish</h3>
+      <div class="scroll"><table id="beneish-table"></table></div>
+      <p class="small">M = −4,84 + 0,920 DSRI + 0,528 GMI + 0,404 AQI + 0,892 SGI + 0,115 DEPI − 0,172 SGAI + 4,679 TATA − 0,327 LVGI. Au-dessus de −1,78 : manipulation probable ; entre −2,22 et −1,78 : zone grise.</p>
+      <div id="beneish-interp"></div>
+      <div class="exp"><button class="btn small" data-csv="beneish">Données CSV (2022-2025)</button></div>
+    </div>
+    <div class="card">
+      <h3>Loi de Benford : premier chiffre des montants</h3>
+      <p class="small">Barres : fréquence observée. Trait : fréquence attendue (log₁₀(1+1/d)). Avec moins d'une centaine de montants, le test reste indicatif : sur une vraie mission, il s'applique au grand livre.</p>
+      <div class="grid3" id="benford"></div>
+      <div class="exp"><button class="btn small" data-csv="benford">Données CSV</button></div>
+    </div>
+  </section>
+
+  <!-- CRASHTEST -->
+  <section class="view" id="view-crashtest">
+    <div>
+      <h2>CrashTest : les risques venant de l'environnement</h2>
+      <p class="intro">Choisissez une crise ou réglez les curseurs. Les comptes du dernier exercice sont recalculés avec les hypothèses de sensibilité de chaque entreprise (modifiables dans Données).</p>
+    </div>
+    <div class="card">
+      <div class="sliders" id="sliders"></div>
+      <div class="presets" id="presets"></div>
+    </div>
+    <div class="grid3" id="stress-cards"></div>
+    <div class="card">
+      <h3>Marge d'exploitation : avant et après la crise</h3>
+      <div id="dumbbell"></div>
+      <div id="dumbbell-interp"></div>
+      <div class="exp"><button class="btn small" data-png="dumbbell" data-name="Marges avant et après crise">Image PNG</button><button class="btn small" data-csv="stress">Données CSV (CrashTest)</button></div>
+    </div>
+  </section>
+
+  <!-- RATIOS -->
+  <section class="view" id="view-ratios">
+    <div>
+      <h2>Ratios et notation de risque</h2>
+      <p class="intro">Évolution des principaux ratios sur 5 ans et note de risque de AAA (très solide) à D (défaillance probable), calculée à partir de la solvabilité, de la rentabilité, de l'endettement, de la trésorerie et du risque de manipulation. Note pédagogique : ce n'est pas une notation d'agence.</p>
+    </div>
+    <div class="grid3" id="rating-cards"></div>
+    <div class="exp"><button class="btn small" data-csv="rating">Notation en CSV</button><button class="btn small" data-csv="ratios">Tous les ratios en CSV</button></div>
+    <div class="charts" id="ratio-charts"></div>
+  </section>
+
+  <!-- MISSION -->
+  <section class="view" id="view-mission">
+    <div class="section-head">
+      <div>
+        <h2>Planification de la mission</h2>
+        <p class="intro">Seuil de signification, évaluation du contrôle interne et risque d'audit par compte, puis calendrier et répartition des tâches de l'équipe FIDEX5.</p>
+      </div>
+      <div class="seg" id="mission-co" role="group" aria-label="Entreprise"></div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3>Seuil de signification</h3>
+        <div class="fields" style="margin-top:10px">
+          <label for="ms-base">Base de calcul<select id="ms-base"><option value="ca">Chiffre d'affaires</option><option value="ta">Total actif</option><option value="equity">Capitaux propres</option><option value="pbt">Résultat avant impôt (EBIT − intérêts)</option></select></label>
+          <label for="ms-rate">Taux appliqué (%)<input type="text" id="ms-rate" inputmode="decimal"></label>
+          <label for="ms-perf">Seuil de planification (% du seuil)<input type="text" id="ms-perf" inputmode="decimal"></label>
+        </div>
+        <div class="mat-kpis" id="ms-out"></div>
+        <p class="small" id="ms-note"></p>
+      </div>
+      <div class="card">
+        <h3>Questionnaire de contrôle interne</h3>
+        <p class="small">Répondez d'après la prise de connaissance (rapports annuels, rapport des commissaires aux comptes, entretiens).</p>
+        <div id="ci-list"></div>
+        <div style="margin-top:10px" id="ci-out"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-head"><h3>Risque d'audit par compte</h3><span class="formula">Risque d'audit = Risque inhérent × Risque lié au contrôle × Risque de non-détection</span></div>
+      <p class="small">Plus le risque inhérent et le risque lié au contrôle sont élevés, plus le risque de non-détection accepté doit être faible : les tests sont alors plus nombreux et plus proches de la clôture.</p>
+      <div class="scroll"><table id="ra-table"></table></div>
+      <div id="mission-interp"></div>
+      <div class="exp"><button class="btn small" data-csv="mission">Données CSV (société affichée)</button></div>
+    </div>
+    <div class="card">
+      <h3>Équipe et calendrier de la mission</h3>
+      <p class="small">Saisissez les noms des membres, puis les dates et le responsable de chaque phase.</p>
+      <div class="team" id="team"></div>
+      <div id="phases" style="margin-top:12px"></div>
+      <div class="scroll" id="gantt" style="margin-top:12px"></div>
+      <div id="gantt-interp"></div>
+      <div class="exp"><button class="btn small" data-png="gantt" data-name="Calendrier de la mission">Image PNG</button><button class="btn small" data-csv="calendar">Données CSV</button></div>
+    </div>
+  </section>
+
+  <!-- ENVIRONNEMENT -->
+  <section class="view" id="view-environnement">
+    <div>
+      <h2>Environnement économique, réglementaire et géopolitique</h2>
+      <p class="intro">Synthèse de l'analyse documentaire du groupe (novembre 2026). Les trois entreprises sont au creux du cycle chimique, mais leurs risques d'audit dominants diffèrent.</p>
+    </div>
+    <div class="card scroll">
+      <table>
+        <thead><tr><th></th><th style="color:var(--c1)">SNEP (Maroc)</th><th style="color:var(--c2)">Arkema (France)</th><th style="color:var(--c3)">Dow (États-Unis)</th></tr></thead>
+        <tbody>
+          <tr><th>Économique</th><td>Surcapacité mondiale de PVC et importations à bas prix ; nouvelles unités (90 000 t de PVC) encore en stabilisation ; approvisionnement en éthylène perturbé.</td><td>Demande faible aux États-Unis et en Europe ; cycle bas des acryliques ; dollar faible (effet change −2,9 % sur les ventes 2025).</td><td>Surcapacités en Asie et en Europe ; marges au plus bas ; dividende réduit de 50 %, projet Path2Zero reporté de deux ans.</td></tr>
+          <tr><th>Réglementaire</th><td>Droits antidumping sur le PVC américain (24,88 %) et égyptien (jusqu'à 92,19 %).</td><td>PFAS à Pierre-Bénite (site Seveso seuil haut), assignation en justice de janvier 2026 ; quotas carbone européens.</td><td>Fermeture de trois actifs européens ; 23 % des émissions directes sous quotas européens ; restructuration de 1,1 à 1,5 Md$.</td></tr>
+          <tr><th>Géopolitique</th><td>Éthylène importé par voie maritime ; prix fixés sur le marché mondial ; protection dépendante de décisions publiques révisables.</td><td>Un tiers des ventes en Amérique du Nord ; investissements en Chine.</td><td>60 % des ventes hors États-Unis et Canada ; coentreprises au Moyen-Orient (Sadara, EQUATE).</td></tr>
+          <tr><th>Risque d'audit prioritaire</th><td><span class="pill crit">Continuité d'exploitation</span></td><td><span class="pill warn">Provisions et litiges environnementaux</span></td><td><span class="pill crit">Restructuration et dépréciations</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small">Analyse détaillée et sources : document « Environnement et hypothèses de risque » du groupe.</p>
+  </section>
+
+  <!-- EQUIPE -->
+  <section class="view" id="view-equipe">
+    <div>
+      <h2>Équipe et tâches de la mission</h2>
+      <p class="intro">Créez une mission, invitez les membres, attribuez les tâches du plan de mission. Chaque membre se connecte avec son compte Claude et voit ses fiches de travail : ce qu'il doit faire, ce qu'il ne doit pas faire, puis il rend ses conclusions au chef de mission.</p>
+    </div>
+    <div id="team-root" style="display:grid;gap:14px"><div class="card"><p class="small">Connexion à l'espace Équipe…</p></div></div>
+  </section>
+
+  <!-- ASSISTANT -->
+  <section class="view" id="view-assistant">
+    <div>
+      <h2>Assistant IA de l'auditeur</h2>
+      <p class="intro">Posez une question sur les sociétés analysées : l'assistant reçoit les chiffres, les scores, le scénario de crise et le plan de mission affichés dans RiskScope. Vérifiez toujours ses réponses.</p>
+    </div>
+    <div class="card" style="display:grid;gap:12px">
+      <div class="chips" id="ai-chips"></div>
+      <div class="chat" id="chat" aria-live="polite"></div>
+      <div class="composer">
+        <label for="ai-input" class="small" style="grid-column:1/-1">Votre question</label>
+        <textarea id="ai-input" placeholder="Ex. : Pourquoi SNEP est-elle en zone rouge ?"></textarea>
+        <div style="display:grid;gap:6px"><button class="btn primary" id="ai-send">Envoyer</button><button class="btn small" id="ai-stop" hidden>Arrêter</button></div>
+      </div>
+      <p class="small" id="ai-status">Connexion à l'assistant…</p>
+    </div>
+  </section>
+
+  <!-- DONNEES -->
+  <section class="view" id="view-donnees">
+    <div class="section-head">
+      <div>
+        <h2>Données des états financiers</h2>
+        <p class="intro">En millions de la devise de publication. Les modifications restent enregistrées dans ce navigateur.</p>
+      </div>
+      <div class="seg" id="data-co" role="group" aria-label="Entreprise"></div>
+    </div>
+    <div class="card">
+      <div class="section-head"><h3 id="data-title">Comptes</h3><button class="btn small danger" id="del-co" hidden>Supprimer cette société</button></div>
+      <div class="scroll" style="margin-top:8px"><table class="data-table" id="data-table"></table></div>
+    </div>
+    <div class="card">
+      <h3>Hypothèses de sensibilité (CrashTest)</h3>
+      <p class="small">À justifier par le rapport annuel : part des matières pétrochimiques dans le coût des ventes, exposition au dollar, émissions de CO₂, etc.</p>
+      <div class="scroll"><table class="data-table" id="hyp-table"></table></div>
+    </div>
+    <div class="card">
+      <h3>Sources et retraitements (sociétés d'origine)</h3>
+      <div class="scroll"><table>
+        <thead><tr><th>Entreprise</th><th>Sources</th><th>Retraitements à connaître</th></tr></thead>
+        <tbody>
+          <tr><td><b style="color:var(--c1)">SNEP</b></td><td>Comptes sociaux publiés sur le site de l'AMMC : états financiers 2021, 2022, 2025 et rapport financier annuel 2024 (snep.ma).</td><td>Coût des ventes = achats consommés de matières et fournitures. Frais généraux = autres charges externes + impôts et taxes + charges de personnel. Passif circulant = dettes du passif circulant + trésorerie-passif (et provisions). Actif circulant 2022 estimé. Flux d'exploitation estimés : résultat net + dotations − variation (clients + stocks) + variation des dettes circulantes ; 2021 sans la variation des dettes.</td></tr>
+          <tr><td><b style="color:var(--c2)">Arkema</b></td><td>Communiqués de résultats annuels (Business Wire), données S&amp;P Global reprises par stockanalysis.com et abcbourse.com.</td><td>Résultat d'exploitation IFRS publié (2021 gonflé par la cession du PMMA). Charges d'intérêts = résultat financier. Réserves = « primes et réserves ». Capitaux propres y compris minoritaires.</td></tr>
+          <tr><td><b style="color:var(--c3)">Dow</b></td><td>Rapports 10-K (SEC) via edgar.tools, stockanalysis.com, kalkinemedia.com et barchart.com.</td><td>Résultat d'exploitation calculé par S&amp;P. Résultat net part du groupe. Flux d'exploitation totaux. Capitaux propres y compris minoritaires.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h3>Sauvegarder ou partager entre membres du groupe</h3>
+      <div class="toolbar">
+        <button class="btn dark" id="copy-json">Copier toutes les données</button>
+        <button class="btn" id="import-json">Importer le texte collé</button>
+        <button class="btn" id="reset-data">Revenir aux chiffres publiés</button>
+        <span class="msg" id="data-msg" role="status"></span>
+      </div>
+      <label for="json-area" class="small" style="display:block;margin-top:10px">Collez ici les données copiées par un autre membre :</label>
+      <textarea id="json-area" spellcheck="false"></textarea>
+    </div>
+  </section>
+</main>
+<footer>FIDEX5 · Audit &amp; Conseil · Prototype pédagogique, Master CCA. Les scores aident à identifier les risques ; ils ne remplacent pas les procédures d'audit.</footer>
+
+<dialog id="new-dlg" aria-labelledby="new-title">
+  <form id="new-form" method="dialog">
+    <div class="dlg-head"><h2 id="new-title" style="font-size:20px">Analyser une nouvelle société</h2><button type="button" class="btn small" id="new-close">Fermer</button></div>
+    <div class="dlg-body">
+      <div class="fields">
+        <label for="nf-name">Nom de la société<input type="text" id="nf-name" required placeholder="ex. Maroc Telecom"></label>
+        <label for="nf-country">Pays<input type="text" id="nf-country" placeholder="ex. Maroc"></label>
+        <label for="nf-cur">Devise de publication
+          <select id="nf-cur"><option value="MDH">MDH (millions de dirhams)</option><option value="M€">M€ (millions d'euros)</option><option value="M$">M$ (millions de dollars)</option></select>
+        </label>
+      </div>
+      <details open>
+        <summary>Option rapide : coller depuis Excel</summary>
+        <p class="small">Copiez dans Excel 17 lignes (dans l'ordre du tableau ci-dessous) et 5 colonnes de 2021 à 2025, avec ou sans la colonne des libellés, puis collez ici.</p>
+        <textarea id="nf-paste" placeholder="Chiffre d'affaires&#9;1000&#9;1100&#9;1050&#9;980&#9;1020"></textarea>
+        <div class="toolbar" style="margin-top:6px"><button type="button" class="btn small" id="nf-fill">Remplir le tableau</button><span class="msg" id="nf-paste-msg" role="status"></span></div>
+      </details>
+      <div class="scroll"><table class="data-table" id="nf-table"></table></div>
+      <span class="msg err" id="nf-err" role="alert"></span>
+    </div>
+    <div class="dlg-foot"><button type="button" class="btn" id="nf-cancel">Annuler</button><button type="submit" class="btn primary">Lancer l'analyse</button></div>
+  </form>
+</dialog>
+
+<dialog id="mission-dlg" aria-labelledby="nm-title">
+  <form id="nm-form" method="dialog">
+    <div class="dlg-head"><h2 id="nm-title" style="font-size:20px">Créer une mission</h2></div>
+    <div class="dlg-body">
+      <div class="fields">
+        <label for="nm-co">Société auditée<select id="nm-co"></select></label>
+        <label for="nm-name">Nom de la mission<input type="text" id="nm-name"></label>
+        <label for="nm-due">Échéance finale<input type="date" id="nm-due"></label>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" id="nm-gen" checked> Générer les tâches à partir du plan de mission (une fiche par risque, plus la prise de connaissance et la synthèse)</label>
+      <p class="small">Vous serez chef de mission. Les tâches vous sont d'abord attribuées ; vous les répartirez une fois les membres ajoutés.</p>
+      <span class="msg err" id="nm-err" role="alert"></span>
+    </div>
+    <div class="dlg-foot"><button type="button" class="btn" id="nm-cancel">Annuler</button><button type="submit" class="btn primary" id="nm-submit">Créer la mission</button></div>
+  </form>
+</dialog>
+<dialog id="task-dlg" aria-labelledby="task-title">
+  <div class="dlg-head"><h2 id="task-title" style="font-size:19px">Tâche</h2></div>
+  <div class="dlg-body" id="task-body"></div>
+  <div class="dlg-foot" id="task-foot" style="flex-wrap:wrap"></div>
+</dialog>
+
+<div id="deck" role="dialog" aria-modal="true" aria-label="Mode présentation">
+  <div class="deck-bar"><div class="wordmark" style="font-size:22px">FIDEX<span>5</span></div><div class="small" id="deck-count"></div><button class="btn small" id="deck-close">Quitter (Échap)</button></div>
+  <div class="slide" id="slide"></div>
+  <div class="deck-foot"><button class="btn" id="deck-prev">← Précédent</button><button class="btn primary" id="deck-next">Suivant →</button></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
