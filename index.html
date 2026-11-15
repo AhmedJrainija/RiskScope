@@ -49,7 +49,7 @@
         <div class="actions"><input type="text" id="hist-search" placeholder="Rechercher une société" aria-label="Rechercher une société"><button class="btn dark" id="hist-compare" disabled>Comparer la sélection</button><button class="btn small" id="hist-export">Historique en CSV</button></div></div>
       <button class="btn small" id="hist-upload" hidden></button>
       <div class="scroll" style="margin-top:10px"><table id="hist-table"></table></div>
-      <p class="small">Cochez 2 à 4 analyses pour les comparer. Les notes et scores de l'historique sont calculés sans scénario de crise.</p>
+      <p class="small">Cochez 2 à 4 analyses pour les comparer. Les notes et scores de l'historique portent sur le dernier exercice publié, sans scénario de crise ni prévision.</p>
       <span class="msg" id="hist-msg" role="status"></span>
     </div>
     <div id="open-section" class="open-section" hidden>
@@ -68,6 +68,18 @@
       <p class="intro">Scénario de crise actif : <b id="scenario-label">aucun</b>.</p>
     </div>
     <div class="grid3" id="overview"></div>
+    <div class="grid2">
+      <div class="card" id="vigil"></div>
+      <div class="card"><h3>Explorer l'analyse</h3><p class="small">Tous les onglets affichent la ou les sociétés ouvertes, avec la prévision de l'année en cours.</p>
+        <div class="navgrid">
+          <a class="navcard" href="#radar"><b>Fraud Radar</b><span class="small">M-score, Benford, alertes</span></a>
+          <a class="navcard" href="#crashtest"><b>CrashTest</b><span class="small">Crises et risques spécifiques</span></a>
+          <a class="navcard" href="#ratios"><b>Ratios et notation</b><span class="small">Tendances et note AAA–D</span></a>
+          <a class="navcard" href="#mission"><b>Mission</b><span class="small">Seuil, contrôle interne, calendrier</span></a>
+          <a class="navcard" href="#environnement"><b>Environnement</b><span class="small">Économique, réglementaire, géopolitique</span></a>
+          <a class="navcard" href="#assistant"><b>Assistant IA</b><span class="small">Questions et rédaction</span></a>
+        </div></div>
+    </div>
     <div class="grid2">
       <div class="card">
         <h3>Matrice des risques inhérents</h3>
@@ -118,13 +130,14 @@
   <!-- CRASHTEST -->
   <section class="view" id="view-crashtest">
     <div>
-      <h2>CrashTest : les risques venant de l'environnement</h2>
-      <p class="intro">Choisissez une crise ou réglez les curseurs. Les comptes du dernier exercice sont recalculés avec les hypothèses de sensibilité de chaque entreprise (modifiables dans Données).</p>
+      <h2>CrashTest : risques de l'environnement et risques spécifiques</h2>
+      <p class="intro">Appliquez un risque spécifique proposé par l'IA, une crise générique, ou réglez les curseurs. Les comptes de l'année analysée (la prévision de l'année en cours quand elle est activée) sont recalculés avec les hypothèses de sensibilité de chaque société.</p>
     </div>
     <div class="card">
       <div class="sliders" id="sliders"></div>
       <div class="presets" id="presets"></div>
     </div>
+    <div class="card" id="ai-scen"></div>
     <div class="grid3" id="stress-cards"></div>
     <div class="card">
       <h3>Marge d'exploitation : avant et après la crise</h3>
@@ -154,6 +167,7 @@
       </div>
       <div class="seg" id="mission-co" role="group" aria-label="Entreprise"></div>
     </div>
+    <div class="card" id="mission-vigil"></div>
     <div class="grid2">
       <div class="card">
         <h3>Seuil de signification</h3>
@@ -239,6 +253,7 @@
       <div class="section-head"><h3 id="data-title">Comptes</h3><button class="btn small danger" id="del-co" hidden>Supprimer cette société</button></div>
       <div class="scroll" style="margin-top:8px"><table class="data-table" id="data-table"></table></div>
     </div>
+    <div class="card" id="fc-card"></div>
     <div class="card">
       <h3>Hypothèses de sensibilité (CrashTest)</h3>
       <p class="small">À justifier par le rapport annuel : part des matières pétrochimiques dans le coût des ventes, exposition au dollar, émissions de CO₂, etc.</p>
@@ -276,6 +291,24 @@
           <select id="nf-cur"><option value="MDH">MDH (millions de dirhams)</option><option value="M€">M€ (millions d'euros)</option><option value="M$">M$ (millions de dollars)</option></select>
         </label>
       </div>
+      <div class="modes" role="group" aria-label="Méthode de saisie">
+        <button type="button" class="mode" data-mode="pdf" aria-pressed="false"><b>Rapport annuel (PDF)</b>L'IA lit le rapport et remplit les chiffres</button>
+        <button type="button" class="mode" data-mode="quick" aria-pressed="false"><b>Analyse rapide</b>12 chiffres clés sur 2 ans</button>
+        <button type="button" class="mode" data-mode="full" aria-pressed="false"><b>Analyse complète</b>17 postes sur 5 ans, modèle Excel</button>
+      </div>
+      <div class="mode-panel" data-panel="pdf">
+        <div class="import-box"><b>Déposez le rapport annuel de la société</b>
+          <ol class="steps"><li>Choisissez un ou plusieurs rapports annuels en PDF (un rapport contient en général l'exercice et le précédent).</li><li>L'IA repère les états financiers et extrait les chiffres (environ 1 minute).</li><li>Vérifiez les cases surlignées en jaune, puis lancez l'analyse.</li></ol>
+          <div class="actions" style="margin-top:8px"><input type="file" id="nf-pdf" accept="application/pdf,.pdf" multiple aria-label="Rapports annuels en PDF"><button type="button" class="btn small" id="nf-pdf-stop" hidden>Arrêter</button></div>
+          <span class="msg" id="nf-pdf-msg" role="status"></span>
+        </div>
+        <p class="small" id="nf-pdf-off" hidden>La lecture par l'IA fonctionne dans la version publiée sur claude.ai. Ici, utilisez l'analyse rapide ou l'analyse complète.</p>
+      </div>
+      <div class="mode-panel" data-panel="quick">
+        <p class="small">Les 12 chiffres essentiels, en millions, pour le dernier exercice et le précédent. Le M-score de Beneish et la loi de Benford demandent les 17 postes : ils seront marqués « non calculé », et vous pourrez compléter plus tard dans l'onglet Données.</p>
+        <div class="scroll"><table class="data-table" id="nf-quick"></table></div>
+      </div>
+      <div class="mode-panel" data-panel="full">
       <div class="import-box"><b>Importer un fichier</b> <span class="small">Modèle Excel de RiskScope (.xlsx) ou fichier CSV</span>
         <div class="actions" style="margin-top:6px"><input type="file" id="nf-file" accept=".xlsx,.xls,.csv" aria-label="Fichier à importer"><button type="button" class="btn small" id="nf-template">Télécharger le modèle Excel</button></div><span class="msg" id="nf-file-msg" role="status"></span></div>
       <details>
@@ -284,7 +317,9 @@
         <textarea id="nf-paste" placeholder="Chiffre d'affaires&#9;1000&#9;1100&#9;1050&#9;980&#9;1020"></textarea>
         <div class="toolbar" style="margin-top:6px"><button type="button" class="btn small" id="nf-fill">Remplir le tableau</button><span class="msg" id="nf-paste-msg" role="status"></span></div>
       </details>
+      <p class="small">Les cases vides sont acceptées : seuls le chiffre d'affaires, le total actif et les capitaux propres des deux derniers exercices sont obligatoires.</p>
       <div class="scroll"><table class="data-table" id="nf-table"></table></div>
+      </div>
       <span class="msg err" id="nf-err" role="alert"></span>
     </div>
     <div class="dlg-foot"><button type="button" class="btn" id="nf-cancel">Annuler</button><button type="submit" class="btn primary">Lancer l'analyse</button></div>
@@ -321,6 +356,8 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="app.js"></script>
 </body>

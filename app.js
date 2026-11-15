@@ -53,7 +53,7 @@ let state;
 try{const s=JSON.parse(localStorage.getItem(STORE)||"null");state=s&&s.cos&&s.order?s:null;if(state)state.order=state.order.filter(k=>state.cos[k]);}catch(e){state=null;}
 if(!state) state=fresh();
 document.documentElement.style.setProperty("--c1",PALETTE[0]);document.documentElement.style.setProperty("--c2",PALETTE[1]);document.documentElement.style.setProperty("--c3",PALETTE[2]);
-let scen={oil:0,fx:0,demand:0,log:0,carbon:0,rate:0};
+let scen={oil:0,fx:0,demand:0,log:0,carbon:0,rate:0,cost:0,oneoff:0};
 let scenName="aucun";
 let ui={year:4,planCo:"all",dataCo:state.order[0],missionCo:state.order[0]};
 function save(){try{localStorage.setItem(STORE,JSON.stringify(state));}catch(e){}}
@@ -67,7 +67,7 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",
 const parseNum=s=>{if(s==null)return NaN;let t=String(s).trim().replace(/[\s  ]/g,"");if(/^\(.*\)$/.test(t))t="-"+t.slice(1,-1);t=t.replace(/−/g,"-");if(/,\d{1,2}$/.test(t)&&!/\.\d/.test(t))t=t.replace(/\./g,"").replace(",",".");else t=t.replace(/,/g,"");return t===""?NaN:Number(t);};
 
 /* ---------- Calculs ---------- */
-function yr(d,t){const o={};for(const [k] of FIELDS)o[k]=Number(d[k][t])||0;return o;}
+function yr(d,t){const o={};for(const [k] of FIELDS){const v=d[k]?d[k][t]:null;o[k]=(v===null||v===undefined||v==="")?NaN:Number(v);}return o;}
 function beneish(d,t){
   if(t<1)return {};const c=yr(d,t),p=yr(d,t-1);
   const sdiv=(a,b)=>b?a/b:NaN;
@@ -83,8 +83,8 @@ function beneish(d,t){
   const M=-4.84+.920*DSRI+.528*GMI+.404*AQI+.892*SGI+.115*DEPI-.172*SGAI+4.679*TATA-.327*LVGI;
   return{DSRI,GMI,AQI,SGI,DEPI,SGAI,LVGI,TATA,M};
 }
-function mZone(M){return !isFinite(M)?"warn":M>-1.78?"crit":M>-2.22?"warn":"good";}
-const M_LABEL={crit:"Manipulation probable",warn:"Zone grise",good:"Pas d'alerte"};
+function mZone(M){return !isFinite(M)?"na":M>-1.78?"crit":M>-2.22?"warn":"good";}
+const M_LABEL={crit:"Manipulation probable",warn:"Zone grise",good:"Pas d'alerte",na:"Non calculé"};
 function altman(x){const tl=x.ta-x.equity;return .717*(x.ca_cur-x.cl)/x.ta+.847*x.re/x.ta+3.107*x.ebit/x.ta+.420*x.equity/(tl||1)+.998*x.ca/x.ta;}
 const BEN=[1,2,3,4,5,6,7,8,9].map(d=>Math.log10(1+1/d));
 function benford(d){
@@ -95,38 +95,41 @@ function benford(d){
 }
 function benZone(m){return m<0.012?"good":m<0.015?"warn":"crit";}
 function stress(key){
-  const co=state.cos[key],h=co.hyp,b=yr(co.data,4),s=scen,c={};
-  const oilCost=b.cogs*h.rawShare*s.oil/100;
+  const co=state.cos[key],h=co.hyp,b=yr(D(key),4),s=scen,c={};
+  const cg=isFinite(b.cogs)?b.cogs:(isFinite(b.ca)&&isFinite(b.ebit)?0.7*(b.ca-b.ebit):0);
+  const oilCost=cg*h.rawShare*s.oil/100;
   c.oil=-oilCost+oilCost*h.pass;
-  c.fx=(b.ca*h.salesFx-b.cogs*h.costFx)*s.fx/100;
-  c.demand=-(b.ca-b.cogs)*s.demand/100;
-  c.log=-b.cogs*h.sea*0.10*s.log/100;
+  c.fx=(b.ca*h.salesFx-cg*h.costFx)*s.fx/100;
+  c.demand=-(b.ca-cg)*s.demand/100;
+  c.log=-cg*h.sea*0.10*s.log/100;
   c.carbon=-h.co2*h.co2exp*s.carbon*h.eur;
-  const dInt=(h.debt!=null&&isFinite(h.debt)?h.debt:b.ltd)*h.float*s.rate/10000;
+  c.cost=-(isFinite(b.sga)?b.sga:0.3*(b.ca-b.ebit))*(s.cost||0)/100;
+  c.oneoff=-b.ca*(s.oneoff||0)/100;
+  const dInt=(h.debt!=null&&isFinite(h.debt)?h.debt:(isFinite(b.ltd)?b.ltd:0))*h.float*s.rate/10000;
   c.rate=-dInt;
   const dCA=oilCost*h.pass+b.ca*h.salesFx*s.fx/100-b.ca*s.demand/100;
-  const dEBIT=c.oil+c.fx+c.demand+c.log+c.carbon;
+  const dEBIT=c.oil+c.fx+c.demand+c.log+c.carbon+c.cost+c.oneoff;
   const ebit=b.ebit+dEBIT, interest=b.interest+dInt;
   const dNet=(dEBIT-dInt)*(1-h.tax), net=b.net+dNet, ca=b.ca+dCA;
   const zb=altman(b), zs=altman({...b,ebit,ca,re:b.re+dNet,equity:b.equity+dNet});
   const cov=interest>0?ebit/interest:Infinity, covB=b.interest>0?b.ebit/b.interest:Infinity;
   let verdict="good";
-  if(zs<1.23||cov<1.5||net<0)verdict="crit";else if(zs<2.9||cov<3)verdict="warn";
+  if(zs<1.23||cov<1.5||net<0)verdict="crit";else if(zs<2.9||cov<3)verdict="warn";else if(!isFinite(zs)&&!isFinite(cov))verdict="na";
   return{b,c,ca,ebit,interest,net,zb,zs,cov,covB,verdict,dEBIT,marginB:b.ebit/b.ca,marginS:ebit/ca};
 }
-const VERD={good:"Résiste",warn:"Fragilisée",crit:"Continuité menacée"};
+const VERD={good:"Résiste",warn:"Fragilisée",crit:"Continuité menacée",na:"Non calculé"};
 function scenActive(){return Object.values(scen).some(v=>v!==0);}
 function risks(key){
-  const co=state.cos[key],d=co.data,b=yr(d,4),p=yr(d,3),h=co.hyp;
+  const co=state.cos[key],d=D(key),b=yr(d,4),p=yr(d,3),h=co.hyp;
   const be=beneish(d,4),st=stress(key);
   const lev=(b.cl+b.ltd)/b.ta;
   const invIdx=(b.inv/p.inv)/(b.ca/p.ca);
-  const fxExp=Math.abs(h.salesFx*b.ca-h.costFx*b.cogs)/b.ca;
+  const fxExp=Math.abs(h.salesFx*b.ca-h.costFx*(isFinite(b.cogs)?b.cogs:b.ca-b.ebit))/b.ca;
   const ebitDrop=Math.abs(b.ebit)>0?-st.dEBIT/Math.abs(b.ebit):0;
   const carbonRatio=Math.abs(b.ebit)>0?(h.co2*h.co2exp*100*h.eur)/Math.abs(b.ebit):0;
   const L=[];
   const add=(risk,prob,impact,compte,assertion,proc,why)=>L.push({key,risk,prob:clamp(Math.round(prob)||1,1,5),impact,compte,assertion,proc,why});
-  add("Manipulation des comptes",be.M>-1.78?5:be.M>-2.22?3:1,5,"Chiffre d'affaires, créances","Réalité, séparation des exercices","Tests de cut-off, revue des écritures manuelles de clôture et des avoirs post-clôture",`M-score ${fmt(be.M,2)}`);
+  add("Manipulation des comptes",!isFinite(be.M)?2:be.M>-1.78?5:be.M>-2.22?3:1,5,"Chiffre d'affaires, créances","Réalité, séparation des exercices","Tests de cut-off, revue des écritures manuelles de clôture et des avoirs post-clôture",isFinite(be.M)?`M-score ${fmt(be.M,2)}`:"M-score non calculé (données incomplètes)");
   add("Recouvrement des créances",be.DSRI>1.15?4:be.DSRI>1.05?3:2,3,"Créances clients","Existence, évaluation","Circularisation clients, balance âgée, revue des dépréciations",`DSRI ${fmt(be.DSRI,2)}`);
   add("Surstockage / dépréciation des stocks",invIdx>1.15?4:invIdx>1.05?3:2,3,"Stocks","Existence, évaluation","Assister à l'inventaire physique, tester la valeur nette de réalisation",`Stocks/CA ${fmt(invIdx,2)}`);
   add("Marge sous pression (coûts matières)",scenActive()?(ebitDrop>.5?5:ebitDrop>.25?4:ebitDrop>.1?3:2):(be.GMI>1.1?4:be.GMI>1.02?3:2),4,"Coût des ventes, stocks","Évaluation, exhaustivité","Analyse des marges par produit, test des coûts de revient et des achats",scenActive()?`EBIT ${pct(-ebitDrop)} sous scénario`:`GMI ${fmt(be.GMI,2)}`);
@@ -157,7 +160,7 @@ function radarSVG(vals,color){
   return s+"</svg>";
 }
 function radarData(k,t){
-  const d=state.cos[k].data,be=beneish(d,t),bf=benford(d),c=yr(d,t),p=yr(d,t-1);
+  const d=D(k),be=beneish(d,t),bf=benford(RD(k)),c=yr(d,t),p=yr(d,t-1);
   const lev=(c.cl+c.ltd)/c.ta, invIdx=(c.inv/p.inv)/(c.ca/p.ca);
   const v=[clamp((be.DSRI-.9)/.5*100),clamp((be.GMI-.9)/.4*100),clamp((be.TATA+.05)/.1*100),clamp((lev-.3)/.4*100),clamp((invIdx-.9)/.5*100),clamp(bf.mad/.03*100)];
   const al=[];const g=(a,b2)=>(a/b2-1);
@@ -177,7 +180,9 @@ const SLIDERS=[
  ["demand","Baisse de la demande",0,40,1,"%","Récession, perte d'un client majeur"],
  ["log","Surcoût du fret maritime",0,30,1,"%","Blocage mer Rouge, détroit d'Ormuz"],
  ["carbon","Taxe carbone",0,200,5," €/t","Quotas UE, ajustement carbone aux frontières"],
- ["rate","Hausse des taux d'intérêt",0,500,25," pb","Sur la dette à taux variable"]
+ ["rate","Hausse des taux d'intérêt",0,500,25," pb","Sur la dette à taux variable"],
+ ["cost","Hausse des autres coûts d'exploitation",0,30,1,"%","Salaires, énergie, sous-traitance"],
+ ["oneoff","Charge ou perte exceptionnelle",0,20,1,"% du CA","Litige, amende, dépréciation, sinistre"]
 ];
 const PRESETS=[
  ["Choc pétrolier",{oil:40,fx:5,demand:0,log:5,carbon:0,rate:0}],
@@ -187,15 +192,15 @@ const PRESETS=[
  ["Taxe carbone UE",{oil:0,fx:0,demand:0,log:0,carbon:100,rate:0}],
  ["Hausse des taux",{oil:0,fx:0,demand:0,log:0,carbon:0,rate:250}]
 ];
-const sign=(k,v)=>(v>0&&(k==="oil"||k==="fx")?"+":"")+v;
+const sign=(k,v)=>(v>0&&(k==="oil"||k==="fx")?"+":"")+(v||0);
 function renderSliders(){
-  document.getElementById("sliders").innerHTML=SLIDERS.map(([k,l,mn,mx,st,u,hint])=>`<div class="sl"><label for="s-${k}"><span>${l}</span><output id="o-${k}">${sign(k,scen[k])}${u}</output></label><input type="range" id="s-${k}" min="${mn}" max="${mx}" step="${st}" value="${scen[k]}"><div class="hint">${hint}</div></div>`).join("");
+  document.getElementById("sliders").innerHTML=SLIDERS.map(([k,l,mn,mx,st,u,hint])=>`<div class="sl"><label for="s-${k}"><span>${l}</span><output id="o-${k}">${sign(k,scen[k]||0)}${u}</output></label><input type="range" id="s-${k}" min="${mn}" max="${mx}" step="${st}" value="${scen[k]||0}"><div class="hint">${hint}</div></div>`).join("");
   SLIDERS.forEach(([k,,,,,u])=>{document.getElementById("s-"+k).oninput=e=>{scen[k]=+e.target.value;scenName="personnalisé";document.getElementById("o-"+k).textContent=sign(k,scen[k])+u;updateStress();};});
   document.getElementById("presets").innerHTML=PRESETS.map(([n],i)=>`<button class="btn" data-i="${i}">${n}</button>`).join("")+`<button class="btn dark" data-i="-1">Réinitialiser</button>`;
-  document.querySelectorAll("#presets button").forEach(b=>b.onclick=()=>{const i=+b.dataset.i;if(i<0){scen={oil:0,fx:0,demand:0,log:0,carbon:0,rate:0};scenName="aucun";}else{scen={...PRESETS[i][1]};scenName=PRESETS[i][0];}renderSliders();updateStress();});
+  document.querySelectorAll("#presets button").forEach(b=>b.onclick=()=>{const i=+b.dataset.i;if(i<0){scen={...ZERO};scenName="aucun";}else{scen={...ZERO,...PRESETS[i][1]};scenName=PRESETS[i][0];}renderSliders();updateStress();});
 }
 function updateStress(){renderStress();renderOverview();renderMatrix();renderPlan();renderRatios();if(document.getElementById("view-mission").classList.contains("active"))renderMission();}
-const NAMES={oil:"Pétrole",fx:"Change",demand:"Demande",log:"Fret",carbon:"Carbone",rate:"Taux"};
+const NAMES={oil:"Pétrole",fx:"Change",demand:"Demande",log:"Fret",carbon:"Carbone",rate:"Taux",cost:"Autres coûts",oneoff:"Exceptionnel"};
 function renderData(){
   if(!keys().length)return;
   if(!keys().includes(ui.dataCo))ui.dataCo=keys()[0];
@@ -208,10 +213,11 @@ function renderData(){
   const del=document.getElementById("del-co");del.hidden=STOREX.mode==="db"&&STOREX.canWrite===false;
   del.onclick=()=>{if(del.dataset.confirm!=="1"){del.dataset.confirm="1";del.textContent="Confirmer la suppression";setTimeout(()=>{del.dataset.confirm="";del.textContent="Supprimer cette société";},4000);return;}
     const k=ui.dataCo;del.dataset.confirm="";del.textContent="Supprimer cette société";deleteCo(k);};
-  document.getElementById("data-table").innerHTML=`<thead><tr><th>Poste (${esc(co.cur)})</th>${YEARS.map(y=>`<th class="n">${y}</th>`).join("")}</tr></thead><tbody>${FIELDS.map(([k,l])=>`<tr><td>${l}</td>${YEARS.map((y,t)=>`<td><input id="d-${k}-${t}" inputmode="decimal" value="${co.data[k][t]}" aria-label="${esc(l)} ${y}"></td>`).join("")}</tr>`).join("")}</tbody>`;
-  document.querySelectorAll("#data-table input").forEach(inp=>inp.onchange=()=>{const[,k,t]=inp.id.split("-");const v=parseNum(inp.value);if(isFinite(v)){co.data[k][+t]=v;saveCo(ui.dataCo);refreshAll();}else inp.value=co.data[k][+t];});
+  const RY=realYears(ui.dataCo),FC=fcActive(ui.dataCo),PJ=FC?proj(ui.dataCo):null;
+  document.getElementById("data-table").innerHTML=`<thead><tr><th>Poste (${esc(co.cur)})</th>${RY.map(y=>`<th class="n">${y}</th>`).join("")}${FC?`<th class="n">${CUR_YEAR} (prévision)</th>`:""}</tr></thead><tbody>${FIELDS.map(([k,l])=>`<tr><td>${l}</td>${RY.map((y,t)=>`<td><input id="d-${k}-${t}" inputmode="decimal" value="${co.data[k][t]==null?"":co.data[k][t]}" aria-label="${esc(l)} ${y}"></td>`).join("")}${FC?`<td class="fc">${fmt(PJ[k],Math.abs(PJ[k])<100?1:0)}</td>`:""}</tr>`).join("")}</tbody>`;
+  document.querySelectorAll("#data-table input").forEach(inp=>inp.onchange=()=>{const[,k,t]=inp.id.split("-");const v=parseNum(inp.value);if(isFinite(v)){co.data[k][+t]=v;saveCo(ui.dataCo);refreshAll();}else if(inp.value.trim()===""){co.data[k][+t]=null;saveCo(ui.dataCo);refreshAll();}else inp.value=co.data[k][+t]==null?"":co.data[k][+t];});
   document.getElementById("hyp-table").innerHTML=`<thead><tr><th>Hypothèse</th><th class="n">Valeur</th></tr></thead><tbody>${HYP.map(([k,l,u])=>`<tr><td>${l}${u==="pct"?" <span class='small'>(%)</span>":""}</td><td style="width:120px"><input id="h-${k}" inputmode="decimal" value="${co.hyp[k]==null?"":u==="pct"?+(co.hyp[k]*100).toFixed(1):co.hyp[k]}" aria-label="${esc(l)}"></td></tr>`).join("")}</tbody>`;
-  document.querySelectorAll("#hyp-table input").forEach(inp=>inp.onchange=()=>{const k=inp.id.slice(2);const u=HYP.find(h=>h[0]===k)[2];const v=parseNum(inp.value);if(isFinite(v)){co.hyp[k]=u==="pct"?v/100:v;saveCo(ui.dataCo);refreshAll();}else if(k==="debt"&&inp.value.trim()===""){co.hyp.debt=null;saveCo(ui.dataCo);refreshAll();}});
+  document.querySelectorAll("#hyp-table input").forEach(inp=>inp.onchange=()=>{const k=inp.id.slice(2);const u=HYP.find(h=>h[0]===k)[2];const v=parseNum(inp.value);if(isFinite(v)){co.hyp[k]=u==="pct"?v/100:v;co.hypUser=true;saveCo(ui.dataCo);refreshAll();}else if(k==="debt"&&inp.value.trim()===""){co.hyp.debt=null;saveCo(ui.dataCo);refreshAll();}});
 }
 function renderPdfSelect(){
   const s=document.getElementById("pdf-co");const cur=s.value;
@@ -234,7 +240,8 @@ function nfTable(keep){
   document.getElementById("nf-table").innerHTML=`<thead><tr><th>Poste (millions)</th>${ys.map(y=>`<th class="n">${y}</th>`).join("")}</tr></thead><tbody>${FIELDS.map(([k,l])=>`<tr><td>${l}</td>${ys.map((y,t)=>`<td><input id="nf-${k}-${t}" inputmode="decimal" aria-label="${esc(l)} ${y}" value="${esc(old[`nf-${k}-${t}`]||"")}"></td>`).join("")}</tr>`).join("")}</tbody>`;
 }
 function openNew(){
-  document.getElementById("new-form").reset();nfTable();
+  document.getElementById("new-form").reset();nfTable();nfQuick();setMode(sampler?"pdf":"quick");
+  ["nf-pdf-msg"].forEach(id=>{const m=document.getElementById(id);m.textContent="";m.className="msg";});
   if(STOREX.mode==="db"&&STOREX.canWrite===false){histMsg("Lecture seule : demandez un accès Éditeur pour créer des analyses.",true);return;}
   document.getElementById("nf-err").textContent="";document.getElementById("nf-paste-msg").textContent="";document.getElementById("nf-file-msg").textContent="";
   if(dlg.showModal)dlg.showModal();else dlg.setAttribute("open","");
@@ -262,22 +269,107 @@ document.getElementById("nf-fill").onclick=()=>{
 };
 document.getElementById("new-form").onsubmit=e=>{
   e.preventDefault();
-  const err=document.getElementById("nf-err");
+  const err=document.getElementById("nf-err");err.textContent="";
   const name=document.getElementById("nf-name").value.trim();
   if(!name){err.textContent="Indiquez le nom de la société.";return;}
-  const data={};let missing=0;
-  for(const [k] of FIELDS){data[k]=YEARS.map((y,t)=>{const v=parseNum(document.getElementById(`nf-${k}-${t}`).value);if(!isFinite(v)){missing++;return 0;}return v;});}
-  for(const k of ["ca","ta","equity"]){if(data[k].some(v=>!v)){err.textContent="Le chiffre d'affaires, le total actif et les capitaux propres doivent être remplis pour les 5 années.";return;}}
+  const data={};let filled=0,missing=0;
+  if(nfMode==="quick"){
+    for(const [k] of FIELDS)data[k]=[null,null,null,null,null];
+    QUICK_F.forEach(k=>[3,4].forEach(t=>{const v=parseNum(document.getElementById(`nq-${k}-${t}`).value);if(isFinite(v)){data[k][t]=v;filled++;}else missing++;}));
+  }else{
+    for(const [k] of FIELDS){data[k]=[0,1,2,3,4].map(t=>{const v=parseNum(document.getElementById(`nf-${k}-${t}`).value);if(isFinite(v)){filled++;return v;}missing++;return null;});}
+  }
+  for(const k of ["ca","ta","equity"]){if(![3,4].every(t=>isFinite(data[k][t])&&data[k][t]!==0)){err.textContent="Le chiffre d'affaires, le total actif et les capitaux propres sont obligatoires pour les deux derniers exercices.";return;}}
   const cur=document.getElementById("nf-cur").value;
   const hyp={rawShare:.30,pass:.50,salesFx:cur==="M$"?0:.10,costFx:cur==="M$"?0:.30,co2:0,co2exp:0,eur:cur==="MDH"?10.8:cur==="M$"?1.08:1,debt:null,float:.30,sea:.30,tax:.25};
   const ly=nfYears()[4];
-  const k=addCo({name,country:document.getElementById("nf-country").value.trim(),sector:document.getElementById("nf-sector").value.trim(),lastYear:ly,cur,data,hyp},true);
+  addCo({name,country:document.getElementById("nf-country").value.trim(),sector:document.getElementById("nf-sector").value.trim(),lastYear:ly,cur,data,hyp,mode:nfMode,aiFilled:nfMode==="full"&&nfAi},true);
   closeNew();
-  histMsg(`${name} ajoutée à l'historique${missing?` (${missing} cases vides comptées à 0 : complétez-les dans Données)`:""}.`);
+  histMsg(`${name} ajoutée à l'historique.${missing?` ${missing} case(s) vide(s) : les scores qui en dépendent sont marqués « non calculé » ; complétez-les dans Données si besoin.`:""}`);
   location.hash="#accueil";setTimeout(()=>document.getElementById("open-section").scrollIntoView({behavior:"smooth"}),50);
 };
 
+/* ---------- Modes de saisie : PDF (IA), rapide, complète ---------- */
+const QUICK_F=["ca","ebit","net","interest","cfo","rec","ca_cur","cl","ta","equity","ltd","re"];
+let nfMode="quick",nfAi=false,pdfCtl=null;
+function setMode(m){nfMode=m;document.querySelectorAll("#new-dlg .mode").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mode===m));document.querySelectorAll("#new-dlg .mode-panel").forEach(p=>p.hidden=p.dataset.panel!==m);
+  if(m==="pdf"){const ok=!!sampler&&!!window.pdfjsLib;document.getElementById("nf-pdf").disabled=!ok;document.getElementById("nf-pdf-off").hidden=ok;}}
+function nfQuick(){const ys=nfYears();const old={};document.querySelectorAll("#nf-quick input").forEach(i=>old[i.id]=i.value);
+  document.getElementById("nf-quick").innerHTML=`<thead><tr><th>Poste (millions)</th><th class="n">${ys[3]}</th><th class="n">${ys[4]}</th></tr></thead><tbody>${QUICK_F.map(k=>{const l=FIELDS.find(f=>f[0]===k)[1];return `<tr><td>${l}${["ca","ta","equity"].includes(k)?" *":""}</td>${[3,4].map(t=>`<td><input id="nq-${k}-${t}" inputmode="decimal" aria-label="${esc(l)} ${ys[t]}" value="${esc(old[`nq-${k}-${t}`]||"")}"></td>`).join("")}</tr>`;}).join("")}</tbody>`;}
+document.querySelectorAll("#new-dlg .mode").forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+document.getElementById("nf-year").addEventListener("change",()=>nfQuick());
+const PDF_KW=["bilan","actif circulant","capitaux propres","chiffre d'affaires","chiffre d affaires","compte de produits","produits et charges","resultat d'exploitation","resultat net","flux de tresorerie","tableau de financement","total actif","balance sheet","income statement","total assets","cash flow","shareholders","revenue","operating income","net income","stocks","creances","dettes de financement","passif circulant","comptes consolides","etats financiers","compte de resultat"];
+async function pdfText(file,msg,signal){
+  const buf=await file.arrayBuffer();
+  const doc=await pdfjsLib.getDocument({data:buf,isEvalSupported:false}).promise;
+  const pages=[];
+  for(let i=1;i<=doc.numPages;i++){if(signal.aborted)throw{code:"cancelled"};
+    if(i%5===1)msg(`Lecture de « ${file.name} » : page ${i} / ${doc.numPages}…`);
+    const pg=await doc.getPage(i);const tc=await pg.getTextContent();
+    let s="",lastY=null;for(const it of tc.items){const y=it.transform?Math.round(it.transform[5]):null;if(lastY!==null&&y!==lastY)s+="\n";else if(s)s+=" ";s+=it.str;lastY=y;}
+    pages.push({n:i,t:s});}
+  return pages;
+}
+function pickPages(pages){
+  if(pages.reduce((a,p)=>a+p.t.length,0)<60000)return pages;
+  const sc=pages.map(p=>{const t=norm(p.t);let k=0;PDF_KW.forEach(w=>{if(t.includes(w))k++;});const digits=(p.t.match(/\d[\d\s.,]{3,}/g)||[]).length;return{p,s:k*3+Math.min(digits,60)/10};});
+  const top=sc.filter(x=>x.s>=4).sort((a,b)=>b.s-a.s).slice(0,16).map(x=>x.p).sort((a,b)=>a.n-b.n);
+  let out=[],len=0;for(const p of top){if(len+p.t.length>110000)break;out.push(p);len+=p.t.length;}
+  return out;
+}
+async function extractFromPdfs(files){
+  const msgEl=document.getElementById("nf-pdf-msg"),stop=document.getElementById("nf-pdf-stop");
+  const msg=(t,err)=>{msgEl.className="msg"+(err?" err":"");msgEl.textContent=t;};
+  if(!sampler||!window.pdfjsLib){msg("La lecture par l'IA n'est pas disponible ici.",true);return;}
+  pdfCtl=new AbortController();stop.hidden=false;stop.onclick=()=>pdfCtl.abort();
+  const years={};let meta={};
+  try{
+    for(const f of files){
+      const pages=await pdfText(f,msg,pdfCtl.signal);
+      const chosen=pickPages(pages);const total=chosen.reduce((a,p)=>a+p.t.length,0);
+      if(total<1500){msg(`« ${f.name} » semble scanné (pas de texte lisible). Utilisez une version PDF texte du rapport, ou l'analyse rapide.`,true);continue;}
+      msg(`Recherche des états financiers dans « ${f.name} » (${chosen.length} pages retenues) : l'IA extrait les chiffres…`);
+      const prompt=`Tu es un assistant d'audit. Voici le texte extrait des pages d'un rapport annuel qui contiennent les états financiers (bilan, compte de résultat ou CPC, tableau des flux ou de financement).
+Extrais, pour chaque exercice présent (en général l'exercice N et N-1), les montants demandés. Si le rapport contient des comptes consolidés et des comptes sociaux, utilise les comptes consolidés ; sinon les comptes sociaux.
+Règles : convertis tous les montants en MILLIONS de la devise de publication (montants en unités : divise par 1 000 000 ; en milliers : divise par 1 000). Les charges sont des valeurs positives ; un résultat négatif garde le signe moins. Si un poste n'apparaît pas clairement, mets null : ne devine jamais.
+Postes : ca = chiffre d'affaires ; cogs = coût des ventes ou, à défaut, achats consommés de matières et fournitures ; sga = frais commerciaux, généraux et administratifs (ou, en plan comptable marocain/français : autres charges externes + impôts et taxes + charges de personnel) ; dep = dotations d'exploitation aux amortissements ; ebit = résultat d'exploitation ; interest = charges d'intérêts ; net = résultat net (part du groupe si consolidé) ; cfo = flux net de trésorerie lié à l'activité (ou, à défaut, capacité d'autofinancement) ; rec = créances clients nettes ; inv = stocks nets ; ca_cur = total actif circulant y compris trésorerie-actif ; ppe = immobilisations corporelles nettes ; ta = total actif (total bilan) ; cl = passif circulant y compris trésorerie-passif ; ltd = dettes financières à long terme (dettes de financement) ; equity = capitaux propres totaux ; re = réserves + report à nouveau (ou résultats non distribués).
+Réponds uniquement avec un objet JSON de la forme :
+{"societe": string|null, "pays": string|null, "devise": "MDH"|"M€"|"M$"|null, "unite_source": string, "exercices": [{"annee": 2025, "ca": number|null, "cogs": number|null, "sga": number|null, "dep": number|null, "ebit": number|null, "interest": number|null, "net": number|null, "cfo": number|null, "rec": number|null, "inv": number|null, "ca_cur": number|null, "ppe": number|null, "ta": number|null, "cl": number|null, "ltd": number|null, "equity": number|null, "re": number|null}]}
+
+TEXTE DU RAPPORT (${f.name}) :
+${chosen.map(p=>`--- Page ${p.n} ---\n${p.t}`).join("\n")}`;
+      const r=await sampler.json(prompt,{signal:pdfCtl.signal,modelTier:"default"});
+      if(r&&typeof r==="object"){
+        if(r.societe&&!meta.name)meta.name=String(r.societe);if(r.pays&&!meta.country)meta.country=String(r.pays);if(r.devise&&!meta.cur)meta.cur=r.devise;
+        (Array.isArray(r.exercices)?r.exercices:[]).forEach(ex=>{const y=parseInt(ex.annee,10);if(!(y>1990&&y<2100))return;years[y]=years[y]||{};FIELDS.forEach(([k])=>{const v=typeof ex[k]==="number"?ex[k]:parseNum(ex[k]);if(isFinite(v)&&years[y][k]===undefined)years[y][k]=v;});});
+      }
+    }
+    const ys=Object.keys(years).map(Number).sort((a,b)=>a-b);
+    if(!ys.length){msg("Aucun chiffre n'a pu être extrait. Essayez un autre fichier ou l'analyse rapide.",true);return;}
+    const ly=ys[ys.length-1];
+    if(meta.name&&!document.getElementById("nf-name").value.trim())document.getElementById("nf-name").value=meta.name;
+    if(meta.country&&!document.getElementById("nf-country").value.trim())document.getElementById("nf-country").value=meta.country;
+    if(meta.cur&&["MDH","M€","M$"].includes(meta.cur))document.getElementById("nf-cur").value=meta.cur;
+    document.getElementById("nf-year").value=ly;nfTable(true);nfQuick();
+    let n=0;
+    ys.forEach(y=>{const t=y-(ly-4);if(t<0||t>4)return;FIELDS.forEach(([k])=>{const v=years[y][k];if(v!==undefined){const el=document.getElementById(`nf-${k}-${t}`);if(el){el.value=Math.round(v*100)/100;el.classList.add("ai-fill");n++;}}});});
+    nfAi=true;setMode("full");
+    const fm=document.getElementById("nf-file-msg");fm.className="msg";fm.textContent=`L'IA a trouvé ${n} montants pour ${ys.filter(y=>y>ly-5).join(", ")}. Vérifiez les cases jaunes avec le rapport, complétez si besoin (ou importez le rapport d'une année plus ancienne), puis lancez l'analyse.`;
+    msg("");
+  }catch(e){
+    if(e&&e.code==="cancelled")msg("Lecture arrêtée.");
+    else if(e&&e.code==="not_granted")msg("L'IA n'est pas autorisée : acceptez la demande d'autorisation ou utilisez l'analyse rapide.",true);
+    else if(e&&e.code==="prompt_too_large")msg("Le rapport est trop volumineux : découpez le PDF pour ne garder que les états financiers.",true);
+    else if(e&&e.code==="invalid_json")msg("L'IA n'a pas renvoyé de chiffres exploitables : réessayez.",true);
+    else if(e&&e.code==="rate_limited")msg("Limite d'usage atteinte : réessayez plus tard.",true);
+    else msg("La lecture du PDF a échoué : vérifiez le fichier, ou utilisez l'analyse rapide.",true);
+  }finally{stop.hidden=true;pdfCtl=null;}
+}
+document.getElementById("nf-pdf").onchange=e=>{const fs=[...(e.target.files||[])];if(fs.length)extractFromPdfs(fs);};
+document.getElementById("nf-table").addEventListener("input",e=>{if(e.target.classList)e.target.classList.remove("ai-fill");});
+
 /* ---------- PDF ---------- */
+try{if(window.pdfjsLib&&window.pdfjsWorker)pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";}catch(e){}
 let dlCap=null;
 try{if(window.claude&&window.claude.use)window.claude.use("downloads").then(d=>{dlCap=d;}).catch(()=>{});}catch(e){}
 const P=s=>String(s==null?"":s).replace(/[  ]/g," ").replace(/−/g,"-").replace(/₂/g,"2").replace(/₁₀/g,"10").replace(/≥/g,">=").replace(/×/g,"x").replace(/[’]/g,"'").replace(/[–—]/g,"-").replace(/→/g,"->");
@@ -310,7 +402,7 @@ function ensureState(){
 }
 function pbtOf(b){return b.ebit-b.interest;}
 function materiality(k){
-  const m=state.cos[k].mission,b=yr(state.cos[k].data,4);
+  const m=state.cos[k].mission,b=yr(D(k),4);
   const baseVal=m.base==="pbt"?pbtOf(b):b[m.base];
   const sm=baseVal*m.rate/100, sp=sm*m.perf/100, si=sm*0.05;
   return{baseVal,sm,sp,si,neg:baseVal<=0};
@@ -327,12 +419,12 @@ function auditRisk(r,rc){
 }
 
 /* ---------- Notation ---------- */
-function ratios(k,t){const x=yr(state.cos[k].data,t);return{
+function ratios(k,t){const x=yr(D(k),t);return{
   liq:x.cl?x.ca_cur/x.cl:NaN, marg:x.ca?x.ebit/x.ca:NaN, roa:x.ta?x.net/x.ta:NaN, roe:x.equity>0?x.net/x.equity:NaN,
   gear:x.equity>0?x.ltd/x.equity:NaN, cov:x.interest>0?x.ebit/x.interest:NaN, dso:x.ca?x.rec/x.ca*365:NaN, dio:x.cogs?x.inv/x.cogs*365:NaN, cfo:x.ca?x.cfo/x.ca:NaN};}
 const GRADES=[[85,"AAA"],[75,"AA"],[65,"A"],[55,"BBB"],[45,"BB"],[35,"B"],[25,"CCC"],[15,"CC"],[0,"D"]];
 function rating(k,stressed){
-  const st=stress(k),b=st.b,be=beneish(state.cos[k].data,4);
+  const st=stress(k),b=st.b,be=beneish(D(k),4);
   const z=stressed?st.zs:st.zb, ebit=stressed?st.ebit:b.ebit, interest=stressed?st.interest:b.interest, ca=stressed?st.ca:b.ca;
   const eq=stressed?b.equity+(st.net-b.net):b.equity;
   const parts=[
@@ -341,7 +433,7 @@ function rating(k,stressed){
     ["Marge d'exploitation",15,clamp((ebit/ca+0.05)/0.2*100)],
     ["Endettement",15,eq>0?clamp((1-(b.ltd/eq)/1.5)*100):0],
     ["Trésorerie d'exploitation",10,clamp((b.cfo/b.ca+0.05)/0.2*100)],
-    ["Qualité des comptes (Beneish)",10,be.M<-2.22?100:be.M<-1.78?50:0]];
+    ["Qualité des comptes (Beneish)",10,!isFinite(be.M)?50:be.M<-2.22?100:be.M<-1.78?50:0]];
   const score=parts.reduce((s,p)=>s+p[1]*(isFinite(p[2])?p[2]:0)/100,0);
   const grade=eq<=0?"D":GRADES.find(g=>score>=g[0])[1];
   const z2=score>=55?"good":score>=35?"warn":"crit";
@@ -369,10 +461,11 @@ function renderPlanOnly(){renderPlan();}
 let sampler=null,aiTurns=[],aiCtl=null;
 const AI_SUGG=["Explique la note de risque de la société ouverte","Rédige la conclusion du plan de mission","Compare les sociétés ouvertes en 5 points","Quels contrôles faut-il prioriser ?","Explique le Beneish M-score simplement"];
 function aiContext(){
-  const o={scenario:scenActive()?{nom:scenName,...scen}:"aucun",societes:keys().map(k=>{const co=state.cos[k],d=co.data,be=beneish(d,4),be24=beneish(d,3),st=stress(k),r=rating(k,false),mt=materiality(k),cs=ciScore(k);
+  const o={scenario:scenActive()?{nom:scenName,...scen}:"aucun",annee_en_cours:CUR_YEAR,prevision_incluse:keys().some(fcActive),societes:keys().map(k=>{const co=state.cos[k],d=D(k),be=beneish(d,4),be24=beneish(d,3),st=stress(k),r=rating(k,false),mt=materiality(k),cs=ciScore(k);
     const last=t=>Object.fromEntries(FIELDS.map(([f])=>[f,d[f][t]]));
     return{nom:co.name,pays:co.country,devise:co.cur,exercice_N:YEARS[4],comptes_N_moins_1:last(3),comptes_N:last(4),beneish_M_N:+fmt(be.M,2).replace(",","."),beneish_M_N_moins_1:+fmt(be24.M,2).replace(",","."),DSRI_N:be.DSRI,altman_Z_N:st.zb,altman_Z_apres_crise:st.zs,verdict_crise:VERD[st.verdict],note:r.grade,score_note:Math.round(r.score),
       seuil_signification:mt.neg?null:Math.round(mt.sm),seuil_planification:mt.neg?null:Math.round(mt.sp),base_seuil:BASES[state.cos[k].mission.base][0],risque_controle:LVL[cs.lvl],
+      prevision:fcActive(k)?{annee:CUR_YEAR,...fcParams(k),comptes_prevus:proj(k)}:null,points_vigilance:vigilPoints(k),scenarios_ia:(co.ai&&co.ai.scenarios)||[],
       risques:risks(k).sort((a,b)=>b.score-a.score).map(x=>({risque:x.risque||x.risk,proba:x.prob,impact:x.impact,indicateur:x.why,procedure:x.proc}))};})};
   return JSON.stringify(o,(k,v)=>typeof v==="number"?Math.round(v*1000)/1000:v);
 }
@@ -387,7 +480,7 @@ function setupAssistant(){
   document.querySelectorAll("#ai-chips button").forEach(b=>b.onclick=()=>{inp.value=AI_SUGG[+b.dataset.i];ask();});
   const off=msg=>{st.textContent=msg;send.disabled=true;inp.disabled=true;document.querySelectorAll("#ai-chips button").forEach(b=>b.disabled=true);};
   if(!(window.claude&&window.claude.use)){off("L'assistant fonctionne dans la version publiée sur Claude (claude.ai). Sur un hébergement externe, il nécessite un serveur (niveau 3).");return;}
-  window.claude.use("sample").then(s=>{if(!s){off("L'assistant n'est pas disponible dans cet affichage.");return;}sampler=s;renderEnv();st.textContent="Prêt. La première question vous demandera d'autoriser l'assistant (il utilise votre compte Claude).";}).catch(()=>off("L'assistant n'est pas disponible dans cet affichage."));
+  window.claude.use("sample").then(s=>{if(!s){off("L'assistant n'est pas disponible dans cet affichage.");return;}sampler=s;renderEnv();renderAIBits();autoAI();st.textContent="Prêt. La première question vous demandera d'autoriser l'assistant (il utilise votre compte Claude).";}).catch(()=>off("L'assistant n'est pas disponible dans cet affichage."));
   async function ask(){
     const q=inp.value.trim();if(!q||!sampler)return;
     if(!keys().length){st.textContent="Ouvrez d'abord une analyse depuis l'historique.";return;}
@@ -419,16 +512,17 @@ let deckI=0,deckSlides=[];
 function withScen(sc,fn){const old=scen,oldN=scenName;scen=sc;try{return fn();}finally{scen=old;scenName=oldN;}}
 function buildSlides(){
   const ks=keys();
-  const alert=ks.map(k=>({k,t:[1,2,3,4].map(t=>({t,M:beneish(state.cos[k].data,t).M})).reduce((a,b)=>b.M>a.M?b:a)})).reduce((a,b)=>b.t.M>a.t.M?b:a);
-  const ak=alert.k,at=alert.t.t,abe=beneish(state.cos[ak].data,at),ac=yr(state.cos[ak].data,at),ap=yr(state.cos[ak].data,at-1);
+  const alert=ks.map(k=>({k,t:[1,2,3,4].map(t=>({t,M:beneish(D(k),t).M})).reduce((a,b)=>b.M>a.M?b:a)})).reduce((a,b)=>b.t.M>a.t.M?b:a);
+  const ak=alert.k,at=alert.t.t,abe=beneish(D(ak),at),ac=yr(D(ak),at),ap=yr(D(ak),at-1);
   const shock=PRESETS[0];
   const S=[];
   S.push(`<div class="small" style="letter-spacing:2px;text-transform:uppercase">Mission d'audit · Master CCA</div><h1>RiskScope : identifier les risques inhérents de ${ks.map(k=>esc(state.cos[k].name)).join(", ")}</h1><p class="lead">Une plateforme fintech qui croise les risques venant des comptes et ceux venant de l'environnement, puis génère le plan de mission.</p><p class="small">Équipe FIDEX5 : ${state.team.map(esc).join(" · ")}</p>`);
   S.push(`<h2>Notre démarche</h2><div class="grid3">${[["1. Fraud Radar","Beneish M-score, loi de Benford et ratios d'alerte sur 5 ans d'états financiers."],["2. CrashTest","Simulation de crises : pétrole, dollar, fret, taxe carbone, taux."],["3. Plan de mission","Matrice des risques, seuil de signification, risque d'audit et procédures."]].map(([t,d])=>`<div class="card"><h3>${t}</h3><p class="small" style="font-size:15px">${d}</p></div>`).join("")}</div>`);
-  S.push(`<h2>Notation de risque ${YEARS[4]}</h2><div class="grid3">${ks.map(k=>{const r=rating(k,false);return `<div class="card co" style="--co:${col(k)}"><div class="co-name">${esc(state.cos[k].name)}</div><div class="rating ${r.zone}" style="font-size:64px;margin-top:8px">${r.grade}</div><div class="small">Score ${fmt(r.score)}/100 · Altman Z' ${fmt(stress(k).zb,2)}</div></div>`;}).join("")}</div>`);
+  S.push(`<h2>Notation de risque ${YL(4)}</h2><div class="grid3">${ks.map(k=>{const r=rating(k,false);return `<div class="card co" style="--co:${col(k)}"><div class="co-name">${esc(state.cos[k].name)}</div><div class="rating ${r.zone}" style="font-size:64px;margin-top:8px">${r.grade}</div><div class="small">Score ${fmt(r.score)}/100 · Altman Z' ${fmt(stress(k).zb,2)}</div></div>`;}).join("")}</div>`);
   S.push(`<h2>Alerte Fraud Radar : ${esc(state.cos[ak].name)} en ${YEARS[at]}</h2><div class="grid3"><div class="card"><div class="small">Beneish M-score</div><div class="big">${fmt(abe.M,2)}</div>${pill(mZone(abe.M),M_LABEL[mZone(abe.M)])}</div><div class="card"><div class="small">Créances clients</div><div class="big">${ac.rec>=ap.rec?"+":""}${pct(ac.rec/ap.rec-1)}</div><div class="small">contre un chiffre d'affaires de ${pct(ac.ca/ap.ca-1)}</div></div><div class="card"><div class="small">Indice DSRI</div><div class="big">${fmt(abe.DSRI,2)}</div><div class="small">au-delà de 1 : créances qui gonflent</div></div></div><p class="lead">Ce n'est pas une preuve de fraude, mais une zone à tester : circularisation des clients, balance âgée, séparation des exercices.</p>`);
   S.push(`<h2>CrashTest : « ${shock[0]} »</h2><p class="lead">Pétrole +40 %, dollar +5 %, fret +5 %.</p><div class="grid3">${ks.map(k=>{const st=withScen(shock[1],()=>stress(k));return `<div class="card co" style="--co:${col(k)}"><div class="co-name">${esc(state.cos[k].name)}</div><div class="row"><span>Résultat d'exploitation</span><span class="num">${fmt(st.b.ebit)} → <b>${fmt(st.ebit)}</b></span></div><div class="row"><span>Altman Z'</span><span class="num">${fmt(st.zb,2)} → <b>${fmt(st.zs,2)}</b></span></div><div style="margin-top:8px">${pill(st.verdict,VERD[st.verdict])}</div></div>`;}).join("")}</div>`);
   S.push(`<h2>Risques prioritaires et travaux d'audit</h2><div class="grid3">${ks.map(k=>{const cs=ciScore(k),mt=materiality(k);return `<div class="card co" style="--co:${col(k)}"><div class="co-name">${esc(state.cos[k].name)}</div><ul class="alerts">${risks(k).sort((a,b)=>b.score-a.score).slice(0,3).map(r=>`<li><span class="dot ${prio(r.score)}"></span><span>${esc(r.risk)}</span></li>`).join("")}</ul><p class="small" style="margin-top:10px">Seuil de signification : ${mt.neg?"n.d.":fmt(mt.sm)+" "+esc(state.cos[k].cur)} · Risque lié au contrôle : ${LVL[cs.lvl].toLowerCase()}</p></div>`;}).join("")}</div>`);
+  S.push(`<h2>Points de vigilance pour ${CUR_YEAR}</h2><div class="grid3">${ks.map(k=>`<div class="card co" style="--co:${col(k)}"><div class="co-name">${esc(state.cos[k].name)}</div><ol class="vlist">${vigilPoints(k).slice(0,4).map(p=>`<li><b>${esc(p.t)}</b></li>`).join("")}</ol></div>`).join("")}</div>`);
   S.push(`<h2>Et ensuite ?</h2><div class="grid3">${[["Toute entreprise","Saisie ou import Excel des comptes de n'importe quelle société, dès aujourd'hui."],["Assistant IA","Questions en langage naturel et rédaction de conclusions à partir des données."],["Lecture des rapports annuels","Prochaine étape : l'IA extrait elle-même les chiffres des PDF publiés."]].map(([t,d])=>`<div class="card"><h3>${t}</h3><p class="small" style="font-size:15px">${d}</p></div>`).join("")}</div><p class="lead">Merci. Questions ?</p>`);
   return S;
 }
@@ -447,16 +541,17 @@ accueil:{t:"Comment utiliser l'accueil",steps:[
  "<b>Nouvelle analyse</b> : téléchargez le modèle Excel, remplissez les 17 postes sur 5 exercices, puis importez le fichier dans « + Nouvelle analyse ». Vous pouvez aussi coller les chiffres depuis Excel ou les saisir à la main.",
  "<b>Historique</b> : chaque analyse est conservée avec sa note, son M-score, son Altman Z' et son verdict. « Ouvrir » affiche l'analyse ; « PDF » télécharge le rapport ; la recherche filtre par nom, pays ou secteur.",
  "<b>Comparer</b> : cochez 2 à 4 analyses puis « Comparer la sélection ». Tous les onglets (Fraud Radar, CrashTest, Ratios, Mission…) affichent alors les sociétés côte à côte.",
+ "<b>Prévision et IA</b> : à l'ouverture d'une analyse, RiskScope ajoute une prévision de l'année en cours (case « Prévision » dans la barre du haut) et lance une analyse IA de la société : scénarios de risques propres, hypothèses du stress test, environnement et points de vigilance.",
  "<b>Exemples</b> : SNEP, Arkema et Dow se chargent d'un clic pour découvrir l'outil ou faire une démonstration.",
  "<b>Lire l'analyse ouverte</b> : cartes de synthèse, matrice des risques (probabilité × impact) et plan de mission généré, avec interprétations et exports PDF ou CSV."]},
 radar:{t:"Comment utiliser le Fraud Radar",steps:[
- "<b>Choisir l'exercice</b> (les quatre derniers) en haut à droite : chaque indice compare l'année choisie à l'année précédente.",
+ "<b>Choisir l'exercice</b> en haut à droite : chaque indice compare l'année choisie à la précédente. L'année marquée (p) est la prévision de l'année en cours : elle montre si les tendances actuelles déclencheraient une alerte.",
  "<b>Beneish M-score</b> : au-dessus de −1,78, risque de manipulation probable ; entre −2,22 et −1,78, zone grise ; en dessous de −2,22, pas d'alerte.",
  "<b>Radar</b> : six axes de 0 (normal) à 100 (alerte forte). Créances = DSRI, Marges = GMI, Accruals = TATA (résultat non encaissé), Endettement, Stocks, Benford.",
  "<b>Loi de Benford</b> : dans des données naturelles, le chiffre 1 apparaît en premier dans environ 30 % des cas. Un écart important peut signaler des chiffres arrangés.",
  "<b>À retenir</b> : ces scores signalent où chercher ; ils ne prouvent pas une fraude. Chaque alerte se traduit par des tests (circularisation, cut-off, revue des écritures)."]},
 crashtest:{t:"Comment utiliser le CrashTest",steps:[
- "<b>Choisir une crise</b> avec les boutons (choc pétrolier, mer Rouge, dollar fort…) ou régler les six curseurs vous-même.",
+ "<b>Choisir une crise</b> : risques spécifiques proposés par l'IA pour chaque société (en haut), crises génériques (choc pétrolier, mer Rouge, dollar fort…) ou réglage libre des huit curseurs. Le stress test s'applique à la prévision de l'année en cours quand elle est activée.",
  "<b>Lire les cartes</b> : les comptes du dernier exercice sont recalculés. Le verdict passe à « Continuité menacée » si l'Altman Z' tombe sous 1,23, si les intérêts ne sont plus couverts 1,5 fois ou si le résultat devient négatif.",
  "<b>Effet de chaque facteur</b> : barres rouges = perte, vertes = gain, en millions de la devise de la société.",
  "<b>Graphique des marges</b> : cercle vide = marge du dernier exercice, cercle plein = marge après la crise. Plus le trait est long, plus la société est sensible.",
@@ -468,6 +563,7 @@ ratios:{t:"Comment lire les ratios et la notation",steps:[
  "<b>Endettement</b> = dettes long terme / capitaux propres ; au-dessus de 1, la société dépend fortement de ses prêteurs. <b>Délai clients</b> = créances / CA × 365 ; au-delà de 90 jours, risque de recouvrement.",
  "<b>Couverture des intérêts</b> = EBIT / charges d'intérêts ; sous 1,5, la société peine à payer ses intérêts. Chaque graphique s'exporte en image (PNG) ou en données (CSV)."]},
 mission:{t:"Comment planifier la mission",steps:[
+ "<b>0. Points d'attention</b> : en haut, les points de vigilance de l'année en cours (proposés par l'IA ou déduits des scores). Seuil, risques et notation sont calculés sur la prévision de l'année en cours.",
  "<b>1. Seuil de signification</b> : choisissez une base (CA, total actif, capitaux propres ou résultat) et un taux. Le seuil de planification (souvent 50 à 75 % du seuil) sert à dimensionner les tests ; les anomalies sous 5 % du seuil sont négligées.",
  "<b>2. Contrôle interne</b> : répondez aux 8 questions d'après la prise de connaissance. Plus il y a de « Non », plus le risque lié au contrôle est élevé.",
  "<b>3. Risque d'audit</b> : pour chaque compte, le tableau combine risque inhérent et risque lié au contrôle pour fixer le risque de non-détection acceptable, et donc la nature et la taille des tests.",
@@ -505,7 +601,7 @@ const interp=t=>`<p class="interp"><b>Interprétation :</b> ${t}</p>`;
 const BW={DSRI:.92,GMI:.528,AQI:.404,SGI:.892,DEPI:.115,TATA:4.679};
 const BX={DSRI:"les créances clients augmentent plus vite que le chiffre d'affaires",GMI:"la marge brute se dégrade",AQI:"la part d'actifs difficiles à évaluer augmente",SGI:"la croissance des ventes est forte, ce qui met la direction sous pression",DEPI:"le rythme d'amortissement ralentit, ce qui gonfle le résultat",TATA:"le résultat est peu converti en trésorerie"};
 function interpM(be){
-  if(!isFinite(be.M))return "Données insuffisantes pour calculer le M-score.";
+  if(!isFinite(be.M))return "M-score non calculé : il faut les 17 postes sur deux exercices consécutifs. Complétez les cases vides dans l'onglet Données (ou importez le rapport annuel) pour obtenir le Fraud Radar complet.";
   const z=mZone(be.M);let top=null,tv=0;
   Object.keys(BW).forEach(id=>{const c=BW[id]*((be[id]||0)-(id==="TATA"?0:1));if(isFinite(c)&&c>tv){tv=c;top=id;}});
   let s=`M-score de ${fmt(be.M,2)} : ${z==="crit"?"au-dessus du seuil de −1,78, le modèle classe la société parmi les manipulateurs probables":z==="warn"?"zone grise, entre −2,22 et −1,78":"sous −2,22, pas de signe de manipulation selon le modèle"}.`;
@@ -517,7 +613,7 @@ function interpBenford(bf){const z=benZone(bf.mad);
   return z==="good"?`La répartition des premiers chiffres suit la loi de Benford (écart ${fmt(bf.mad,4)}) : pas d'anomalie visible.`:`Écart de ${fmt(bf.mad,4)}, ${z==="warn"?"à la limite":"au-delà"} du seuil de 0,015. Avec seulement ${bf.n} montants, le test reste indicatif : à refaire sur le grand livre avant de conclure.`;}
 function interpStress(k){
   const st=stress(k),cu=state.cos[k].cur;
-  if(!scenActive())return `Aucune crise sélectionnée : Altman Z' de ${fmt(st.zb,2)} en ${YEARS[4]}, ${st.zb<1.23?"zone de détresse":st.zb<2.9?"zone grise":"zone saine"}. Choisissez un scénario pour mesurer la résistance de la société.`;
+  if(!scenActive())return `Aucune crise sélectionnée : Altman Z' de ${fmt(st.zb,2)} en ${YL(4)}, ${st.zb<1.23?"zone de détresse":st.zb<2.9?"zone grise":"zone saine"}. Choisissez un scénario pour mesurer la résistance de la société.`;
   const worst=Object.entries(st.c).sort((a,b)=>a[1]-b[1])[0];
   const ch=Math.abs(st.b.ebit)>0?(st.ebit-st.b.ebit)/Math.abs(st.b.ebit):NaN;
   let s=`Sous « ${scenName} », le résultat d'exploitation passe de ${fmt(st.b.ebit)} à ${fmt(st.ebit)} ${cu}${isFinite(ch)?` (${ch>0?"+":""}${pct(ch)})`:""}.`;
@@ -528,7 +624,7 @@ function interpStress(k){
 function interpDumbbell(){
   const d=keys().map(k=>({k,s:stress(k)})).filter(x=>isFinite(x.s.marginB)&&isFinite(x.s.marginS));
   if(!d.length)return "";
-  if(!scenActive())return `Marges ${YEARS[4]} : ${d.map(x=>`${state.cos[x.k].name} ${pct(x.s.marginB,1)}`).join(", ")}. Choisissez une crise pour comparer la sensibilité des sociétés.`;
+  if(!scenActive())return `Marges ${YL(4)} : ${d.map(x=>`${state.cos[x.k].name} ${pct(x.s.marginB,1)}`).join(", ")}. Choisissez une crise pour comparer la sensibilité des sociétés.`;
   const w=d.reduce((a,b)=>(b.s.marginS-b.s.marginB)<(a.s.marginS-a.s.marginB)?b:a);
   const loss=w.s.marginS-w.s.marginB;
   return `${state.cos[w.k].name} est la plus touchée : sa marge perd ${fmt(Math.abs(loss)*100,1)} point${Math.abs(loss)*100>=2?"s":""}. Un même choc ne frappe pas les sociétés de la même façon selon leur structure de coûts, leur devise et leur pouvoir de prix.`;
@@ -547,9 +643,9 @@ function interpRatio(id,f){
   const trend=ks.map(k=>{const [a,b]=v(k);return `${state.cos[k].name} ${isFinite(a)?f(a):"n.d."} → ${isFinite(b)?f(b):"n.d."}`;}).join(" ; ");
   const last=ks.map(k=>({k,x:v(k)[1]})).filter(o=>isFinite(o.x));
   const names=arr=>arr.map(o=>state.cos[o.k].name).join(", ");
-  let s=`De ${YEARS[0]} à ${YEARS[4]} : ${trend}.`;
+  let s=`De ${YEARS[0]} à ${YL(4)} : ${trend}.`;
   const best=last.length?last.reduce((a,b)=>(id==="gear"||id==="dso")?(b.x<a.x?b:a):(b.x>a.x?b:a)):null;
-  if(best&&last.length>1)s+=` Meilleure position en ${YEARS[4]} : ${state.cos[best.k].name}.`;
+  if(best&&last.length>1)s+=` Meilleure position en ${YL(4)} : ${state.cos[best.k].name}.`;
   const flag=(cond,txt)=>{const l=last.filter(o=>cond(o.x));if(l.length)s+=` ${names(l)} : ${txt}`;};
   if(id==="marg")flag(x=>x<0,"marge négative, l'activité perd de l'argent avant frais financiers.");
   if(id==="roe")flag(x=>x<0,"rentabilité négative, les pertes réduisent les capitaux propres.");
@@ -603,12 +699,12 @@ const slug=s=>String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").re
 function toCsv(rows){return "﻿"+rows.map(r=>r.map(c=>{let v=c==null?"":typeof c==="number"?(isFinite(c)?String(Math.round(c*10000)/10000).replace(".",","):""):String(c);return /[;"\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v;}).join(";")).join("\r\n");}
 const CSV={};
 CSV.plan=()=>[["Société","Risque","Probabilité","Impact","Score","Priorité","Indicateur","Comptes","Assertions","Procédures"],...keys().flatMap(k=>risks(k).sort((a,b)=>b.score-a.score).map(r=>[state.cos[k].name,r.risk,r.prob,r.impact,r.score,PRIO_L[prio(r.score)],r.why,r.compte,r.assertion,r.proc]))];
-CSV.beneish=()=>[["Société","Exercice","DSRI","GMI","AQI","SGI","DEPI","SGAI","LVGI","TATA","M-score","Lecture"],...keys().flatMap(k=>[1,2,3,4].map(t=>{const b=beneish(state.cos[k].data,t);return[state.cos[k].name,YEARS[t],b.DSRI,b.GMI,b.AQI,b.SGI,b.DEPI,b.SGAI,b.LVGI,b.TATA,b.M,M_LABEL[mZone(b.M)]];}))];
-CSV.benford=()=>[["Société","Montants",...[1,2,3,4,5,6,7,8,9].map(d=>"Chiffre "+d),"Écart moyen (MAD)"],["Attendu (Benford)","",...BEN],...keys().map(k=>{const b=benford(state.cos[k].data);return[state.cos[k].name,b.n,...b.obs,b.mad];})];
+CSV.beneish=()=>[["Société","Exercice","DSRI","GMI","AQI","SGI","DEPI","SGAI","LVGI","TATA","M-score","Lecture"],...keys().flatMap(k=>[1,2,3,4].map(t=>{const b=beneish(D(k),t);return[state.cos[k].name,YL(t),b.DSRI,b.GMI,b.AQI,b.SGI,b.DEPI,b.SGAI,b.LVGI,b.TATA,b.M,M_LABEL[mZone(b.M)]];}))];
+CSV.benford=()=>[["Société","Montants",...[1,2,3,4,5,6,7,8,9].map(d=>"Chiffre "+d),"Écart moyen (MAD)"],["Attendu (Benford)","",...BEN],...keys().map(k=>{const b=benford(RD(k));return[state.cos[k].name,b.n,...b.obs,b.mad];})];
 CSV.stress=()=>[["Scénario",scenActive()?scenName:"aucun",...SLIDERS.map(s=>`${s[1]} : ${scen[s[0]]}${s[5]}`)],[],["Société","Devise","CA avant","CA après","EBIT avant","EBIT après","Résultat net avant","Résultat net après","Couverture avant","Couverture après","Z' avant","Z' après","Verdict","Marge avant","Marge après",...Object.values(NAMES).map(n=>"Effet "+n.toLowerCase())],...keys().map(k=>{const s=stress(k);return[state.cos[k].name,state.cos[k].cur,s.b.ca,s.ca,s.b.ebit,s.ebit,s.b.net,s.net,s.covB,s.cov,s.zb,s.zs,VERD[s.verdict],s.marginB,s.marginS,...Object.keys(NAMES).map(n=>s.c[n])];})];
-CSV.ratios=()=>[["Société","Exercice",...RATIO_DEFS.map(d=>d[1])],...keys().flatMap(k=>YEARS.map((y,t)=>{const r=ratios(k,t);return[state.cos[k].name,y,...RATIO_DEFS.map(d=>r[d[0]])];}))];
-RATIO_DEFS.forEach(([id,title])=>{CSV["ratio_"+id]=()=>[["Exercice",...keys().map(k=>state.cos[k].name)],...YEARS.map((y,t)=>[y,...keys().map(k=>ratios(k,t)[id])])];});
-CSV.history=()=>[["Société","Pays","Secteur","Devise","Dernier exercice","Note","Score","M-score","Altman Z'","Verdict","Créée le","Mise à jour"],...libKeys().map(k=>{const c=state.cos[k];let r,be,st;withScen(ZERO,()=>{r=rating(k,false);be=beneish(c.data,4);st=stress(k);});return[c.name,c.country||"",c.sector||"",c.cur,c.lastYear||"",r.grade,r.score,be.M,st.zb,VERD[st.verdict],c.createdAt?new Date(c.createdAt).toLocaleDateString("fr-FR"):"",c.updatedAt?new Date(c.updatedAt).toLocaleDateString("fr-FR"):""];})];
+CSV.ratios=()=>[["Société","Exercice",...RATIO_DEFS.map(d=>d[1])],...keys().flatMap(k=>YEARS.map((y,t)=>{const r=ratios(k,t);return[state.cos[k].name,YL(t),...RATIO_DEFS.map(d=>r[d[0]])];}))];
+RATIO_DEFS.forEach(([id,title])=>{CSV["ratio_"+id]=()=>[["Exercice",...keys().map(k=>state.cos[k].name)],...YEARS.map((y,t)=>[YL(t),...keys().map(k=>ratios(k,t)[id])])];});
+CSV.history=()=>[["Société","Pays","Secteur","Devise","Dernier exercice","Note","Score","M-score","Altman Z'","Verdict","Créée le","Mise à jour"],...libKeys().map(k=>{const c=state.cos[k];let r,be,st;withNoFc(()=>withScen(ZERO,()=>{r=rating(k,false);be=beneish(D(k),4);st=stress(k);}));return[c.name,c.country||"",c.sector||"",c.cur,c.lastYear||"",r.grade,r.score,be.M,st.zb,VERD[st.verdict],c.createdAt?new Date(c.createdAt).toLocaleDateString("fr-FR"):"",c.updatedAt?new Date(c.updatedAt).toLocaleDateString("fr-FR"):""];})];
 CSV.rating=()=>!keys().length?[["Aucune analyse ouverte"]]:[["Société","Note","Score /100",...rating(keys()[0],false).parts.map(p=>`${p[0]} (poids ${p[1]})`),"Interprétation"],...keys().map(k=>{const r=rating(k,false);return[state.cos[k].name,r.grade,r.score,...r.parts.map(p=>p[2]),interpRating(k)];})];
 CSV.mission=()=>{const k=ui.missionCo,co=state.cos[k],mt=materiality(k),cs=ciScore(k);return[["Société",co.name],["Base du seuil",BASES[state.cos[k].mission.base][0]],["Taux (%)",state.cos[k].mission.rate],["Seuil de signification",mt.sm],["Seuil de planification",mt.sp],["Anomalies insignifiantes",mt.si],["Risque lié au contrôle",LVL[cs.lvl]],[],["Question de contrôle interne","Réponse"],...CI_Q.map((q,i)=>[q,CI_A.find(a=>a[1]===state.cos[k].mission.ci[i])[0]]),[],["Risque","Comptes","Risque inhérent","Risque lié au contrôle","Non-détection acceptable","Travaux","Échantillon"],...risks(k).sort((a,b)=>b.score-a.score).map(r=>{const a=auditRisk(r,cs.lvl);return[r.risk,r.compte,LVL[a.ri],LVL[cs.lvl],LVL[a.rnd],a.work,a.sample];})];};
 CSV.calendar=()=>[["Phase","Début","Fin","Responsable"],...state.phases.map(p=>[p.name,p.start,p.end,state.team[p.who]||""])];
@@ -630,16 +726,16 @@ function expMsg(b){let m=b.parentElement.querySelector(".msg");if(!m){m=document
 function renderOverview(){
   document.getElementById("scenario-label").textContent=scenActive()?scenName:"aucun (réglez-le dans CrashTest)";
   document.getElementById("overview").innerHTML=keys().map(k=>{
-    const be=beneish(state.cos[k].data,4),st=stress(k),r=rating(k,false);
+    const be=beneish(D(k),4),st=stress(k),r=rating(k,false);
     const rs=risks(k).sort((a,b)=>b.score-a.score);
     return coCard(k,`<div class="kpis" style="grid-template-columns:auto 1fr 1fr;align-items:end">
-      <div class="kpi"><div class="lab">Note</div><div class="rating ${r.zone}" style="font-size:34px">${r.grade}</div></div>
-      <div class="kpi"><div class="lab">M-score ${YEARS[4]}</div><div class="val">${fmt(be.M,2)}</div>${pill(mZone(be.M),M_LABEL[mZone(be.M)])}</div>
-      <div class="kpi"><div class="lab">Altman Z' ${scenActive()?"après crise":String(YEARS[4])}</div><div class="val">${fmt(st.zs,2)}</div>${pill(st.verdict,VERD[st.verdict])}</div>
+      <div class="kpi"><div class="lab">Note ${YL(4)}</div><div class="rating ${r.zone}" style="font-size:34px">${r.grade}</div></div>
+      <div class="kpi"><div class="lab">M-score ${YL(4)}</div><div class="val">${fmt(be.M,2)}</div>${pill(mZone(be.M),M_LABEL[mZone(be.M)])}</div>
+      <div class="kpi"><div class="lab">Altman Z' ${scenActive()?"après crise":YL(4)}</div><div class="val">${fmt(st.zs,2)}</div>${pill(st.verdict,VERD[st.verdict])}</div>
     </div>
     <p class="small" style="margin:12px 0 4px">Risques prioritaires</p>
     <ul class="alerts">${rs.slice(0,3).map(r=>`<li><span class="dot ${prio(r.score)}"></span><span>${esc(r.risk)} <span class="small">(${esc(r.why)})</span></span></li>`).join("")}</ul>
-    ${interp(`${GRADE_TXT[r.grade].charAt(0).toUpperCase()+GRADE_TXT[r.grade].slice(1)} (note ${r.grade}). Risque n° 1 pour l'audit : ${rs[0].risk.toLowerCase()}. ${mZone(be.M)==="good"?"Les comptes 2025 ne montrent pas de signe de manipulation selon Beneish.":"Le M-score appelle des tests renforcés sur les comptes."}`)}
+    ${interp(`${GRADE_TXT[r.grade].charAt(0).toUpperCase()+GRADE_TXT[r.grade].slice(1)} (note ${r.grade}). Risque n° 1 pour l'audit : ${rs[0].risk.toLowerCase()}. ${mZone(be.M)==="na"?"Le M-score n'a pas pu être calculé (postes manquants) : complétez les données pour le Fraud Radar complet.":mZone(be.M)==="good"?`Les comptes ${YL(4)} ne montrent pas de signe de manipulation selon Beneish.`:"Le M-score appelle des tests renforcés sur les comptes."}`)}
     <div style="margin-top:10px"><button class="btn small" data-pdf="${k}">Rapport PDF</button></div>`);
   }).join("");
   document.querySelectorAll("#overview [data-pdf]").forEach(b=>b.onclick=()=>downloadPdf([b.dataset.pdf]));
@@ -674,23 +770,23 @@ function renderPlan(){
 }
 function renderRadar(){
   const ys=document.getElementById("year-seg");
-  ys.innerHTML=[1,2,3,4].map(t=>`<button aria-pressed="${ui.year===t}" data-t="${t}">${YEARS[t]}</button>`).join("");
+  ys.innerHTML=[1,2,3,4].map(t=>`<button aria-pressed="${ui.year===t}" data-t="${t}">${YL(t)}</button>`).join("");
   ys.querySelectorAll("button").forEach(b=>b.onclick=()=>{ui.year=+b.dataset.t;renderRadar();});
   const t=ui.year;
   document.getElementById("radar-cards").innerHTML=keys().map(k=>{
     const {be,v,al}=radarData(k,t);const z=mZone(be.M);
-    return coCard(k,`<div class="kpis" style="grid-template-columns:1fr auto;align-items:end"><div class="kpi"><div class="lab">M-score ${YEARS[t]}</div><div class="val">${fmt(be.M,2)}</div></div>${pill(z,M_LABEL[z])}</div>
+    return coCard(k,`<div class="kpis" style="grid-template-columns:1fr auto;align-items:end"><div class="kpi"><div class="lab">M-score ${YL(t)}</div><div class="val">${fmt(be.M,2)}</div></div>${pill(z,M_LABEL[z])}</div>
       <div class="radar-wrap" id="radar-svg-${k}">${radarSVG(v,col(k))}</div>
       <ul class="alerts">${al.map(([z2,tx])=>`<li><span class="dot ${z2}"></span><span>${esc(tx)}</span></li>`).join("")}</ul>
-      ${interp(interpM(be))}${expBar("radar-svg-"+k,`Radar ${state.cos[k].name} ${YEARS[t]}`)}`);
+      ${interp(interpM(be))}${expBar("radar-svg-"+k,`Radar ${state.cos[k].name} ${YL(t)}`)}`);
   }).join("");
   const idx=[["DSRI","Créances / CA","> 1 : créances qui gonflent"],["GMI","Marge brute","> 1 : marge qui se dégrade"],["AQI","Qualité des actifs","> 1 : actifs plus douteux"],["SGI","Croissance des ventes","forte croissance = pression"],["DEPI","Amortissements","> 1 : amortissements ralentis"],["SGAI","Frais généraux / CA","> 1 : frais en hausse"],["LVGI","Endettement","> 1 : levier en hausse"],["TATA","Accruals / actif","> 0 : résultat non encaissé"]];
-  const bes=keys().map(k=>beneish(state.cos[k].data,t));
+  const bes=keys().map(k=>beneish(D(k),t));
   document.getElementById("beneish-table").innerHTML=`<thead><tr><th>Indice</th><th>Lecture</th>${keys().map(k=>`<th class="n" style="color:${col(k)}">${esc(state.cos[k].name)}</th>`).join("")}</tr></thead><tbody>${idx.map(([id,l,r])=>`<tr><td><b class="mono">${id}</b> <span class="small">${l}</span></td><td class="small">${r}</td>${bes.map(b=>`<td class="n">${fmt(b[id],id==="TATA"?3:2)}</td>`).join("")}</tr>`).join("")}<tr><td><b>M-score</b></td><td class="small">seuil −1,78</td>${bes.map(b=>`<td class="n"><b>${fmt(b.M,2)}</b></td>`).join("")}</tr></tbody>`;
   const flagged=keys().filter((k,i)=>mZone(bes[i].M)!=="good");
-  document.getElementById("beneish-interp").innerHTML=interp(flagged.length?`En ${YEARS[t]}, ${flagged.map(k=>state.cos[k].name).join(" et ")} ${flagged.length>1?"dépassent":"dépasse"} le seuil de vigilance de −2,22. Comparez les indices supérieurs à 1 pour identifier les postes à tester.`:`En ${YEARS[t]}, aucune société ne dépasse le seuil de vigilance de −2,22 : pas de signal de manipulation selon le modèle.`);
+  document.getElementById("beneish-interp").innerHTML=interp(flagged.length?`En ${YL(t)}, ${flagged.map(k=>state.cos[k].name).join(" et ")} ${flagged.length>1?"dépassent":"dépasse"} le seuil de vigilance de −2,22. Comparez les indices supérieurs à 1 pour identifier les postes à tester.`:`En ${YL(t)}, aucune société ne dépasse le seuil de vigilance de −2,22 : pas de signal de manipulation selon le modèle.`);
   document.getElementById("benford").innerHTML=keys().map(k=>{
-    const bf=benford(state.cos[k].data),c=col(k);
+    const bf=benford(RD(k)),c=col(k);
     const W=280,H=150,x0=24,bw=(W-x0-6)/9,ymax=.4,sy=v=>H-20-Math.min(v,ymax)/ymax*(H-34);
     let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Benford ${esc(state.cos[k].name)}">`;
     [0,.1,.2,.3,.4].forEach(g=>{s+=`<line x1="${x0}" x2="${W-4}" y1="${sy(g)}" y2="${sy(g)}" stroke="var(--line)"/><text x="${x0-4}" y="${sy(g)+3}" font-size="9" text-anchor="end">${g*100}</text>`;});
@@ -716,7 +812,7 @@ function renderStress(){
       <p class="small" style="margin:12px 0 2px">Effet de chaque facteur sur le résultat (${esc(cu)})</p>${contrib}
       ${interp(interpStress(k))}`);
   }).join("");
-  document.getElementById("dumbbell").innerHTML=`<div class="scroll">${dumbbellSvg()}</div><p class="small">Cercle vide : marge ${YEARS[4]} ; cercle plein : marge après la crise sélectionnée.</p>`;
+  document.getElementById("dumbbell").innerHTML=`<div class="scroll">${dumbbellSvg()}</div><p class="small">Cercle vide : marge ${YL(4)} ; cercle plein : marge après la crise sélectionnée.</p>`;
   document.getElementById("dumbbell-interp").innerHTML=interp(interpDumbbell());
 }
 function dumbbellSvg(){
@@ -755,7 +851,8 @@ function lineChart(series,u,f){
   let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" role="img">`;
   for(let i=0;i<=4;i++){const v=mn+(mx-mn)*i/4,y=sy(v);s+=`<line x1="${l}" x2="${W-r}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${l-6}" y="${y+3}" font-size="9.5" text-anchor="end">${f(v)}</text>`;}
   if(mn<0&&mx>0)s+=`<line x1="${l}" x2="${W-r}" y1="${sy(0)}" y2="${sy(0)}" stroke="var(--muted)" stroke-width="1"/>`;
-  YEARS.forEach((y,i)=>{s+=`<text x="${sx(i)}" y="${H0-8}" font-size="10" text-anchor="middle">${y}</text>`;});
+  if(isFc(4)){const bx=(sx(3)+sx(4))/2;s+=`<rect x="${bx}" y="${tp}" width="${W-r-bx}" height="${H0-tp-bt}" fill="var(--accent)" fill-opacity=".07"/><text x="${W-r-4}" y="${tp+10}" font-size="9" text-anchor="end" style="fill:var(--accent-ink)">prévision</text>`;}
+  YEARS.forEach((y,i)=>{s+=`<text x="${sx(i)}" y="${H0-8}" font-size="10" text-anchor="middle">${YL(i)}</text>`;});
   const ends=[];
   series.forEach(({k,vals})=>{const c=col(k);const pts=vals.map((v,i)=>isFinite(v)?[sx(i),sy(v)]:null).filter(Boolean);
     if(pts.length>1)s+=`<polyline points="${pts.map(p=>p.join(",")).join(" ")}" fill="none" stroke="${c}" stroke-width="2.2"/>`;
@@ -772,7 +869,7 @@ function renderMission(){
   const k=ui.missionCo,m=state.cos[k].mission,co=state.cos[k];
   const seg=document.getElementById("mission-co");
   seg.innerHTML=keys().map(x=>`<button aria-pressed="${x===k}" data-k="${x}">${esc(state.cos[x].name)}</button>`).join("");
-  seg.querySelectorAll("button").forEach(b=>b.onclick=()=>{ui.missionCo=b.dataset.k;renderMission();});
+  seg.querySelectorAll("button").forEach(b=>b.onclick=()=>{ui.missionCo=b.dataset.k;renderMission();renderAIBits();});
   const bs=document.getElementById("ms-base"),rt=document.getElementById("ms-rate"),pf=document.getElementById("ms-perf");
   bs.value=m.base;rt.value=String(m.rate).replace(".",",");pf.value=String(m.perf);
   bs.onchange=()=>{m.base=bs.value;m.rate=BASES[m.base][1];save();renderMission();};
@@ -780,8 +877,8 @@ function renderMission(){
   pf.onchange=()=>{const v=parseNum(pf.value);if(isFinite(v)&&v>0&&v<=100){m.perf=v;save();}renderMission();};
   const mt=materiality(k);
   document.getElementById("ms-out").innerHTML=[["Seuil de signification",mt.sm],["Seuil de planification",mt.sp],["Anomalies insignifiantes (5 %)",mt.si]].map(([l,v])=>`<div class="box"><div class="lab">${l}</div><div class="val">${mt.neg?"n.d.":fmt(v,v<10?2:0)}</div><div class="small">${esc(co.cur)}</div></div>`).join("");
-  const loss=pbtOf(yr(co.data,4))<=0;
-  document.getElementById("ms-note").innerHTML=mt.neg?`<b>Base négative ou nulle :</b> choisissez le chiffre d'affaires ou le total actif.`:`Base retenue : ${BASES[m.base][0].toLowerCase()} ${YEARS[4]} = ${fmt(mt.baseVal)} ${esc(co.cur)} × ${fmt(m.rate,2)} %. Fourchettes usuelles : CA 0,5–1 %, total actif 1–2 %, capitaux propres 1–5 %, résultat avant impôt 5–10 %.${loss?" La société est déficitaire : le résultat n'est pas une base pertinente.":""}`;
+  const loss=pbtOf(yr(D(k),4))<=0;
+  document.getElementById("ms-note").innerHTML=mt.neg?`<b>Base négative ou nulle :</b> choisissez le chiffre d'affaires ou le total actif.`:`Base retenue : ${BASES[m.base][0].toLowerCase()} ${YL(4)} = ${fmt(mt.baseVal)} ${esc(co.cur)} × ${fmt(m.rate,2)} %. Fourchettes usuelles : CA 0,5–1 %, total actif 1–2 %, capitaux propres 1–5 %, résultat avant impôt 5–10 %.${loss?" La société est déficitaire : le résultat n'est pas une base pertinente.":""}`;
   document.getElementById("ci-list").innerHTML=CI_Q.map((q,i)=>`<div class="q"><span>${q}</span><div class="seg" role="group" aria-label="${esc(q)}">${CI_A.map(([l,v])=>`<button aria-pressed="${m.ci[i]===v}" data-i="${i}" data-v="${v}">${l}</button>`).join("")}</div></div>`).join("");
   document.querySelectorAll("#ci-list button").forEach(b=>b.onclick=()=>{m.ci[+b.dataset.i]=+b.dataset.v;save();renderMission();});
   const cs=ciScore(k);
@@ -809,7 +906,7 @@ async function buildPdf(ks){
   const img={};
   const grab=async(key,svg,title)=>{try{img[key]=await svgToPng(svg,title);}catch(e){}};
   for(const [id,title,u,f] of RATIO_DEFS)await grab("r_"+id,lineChart(ks.map(k=>({k,vals:YEARS.map((yy,t)=>ratios(k,t)[id])})),u,f),title);
-  for(const k of ks)await grab("radar_"+k,radarSVG(radarData(k,4).v,col(k)),"Fraud Radar "+YEARS[4]);
+  for(const k of ks)await grab("radar_"+k,radarSVG(radarData(k,4).v,col(k)),"Fraud Radar "+YL(4));
   if(scenActive())await grab("dumb",dumbbellSvg(),"Marge d'exploitation avant / après crise");
   const g=document.querySelector("#gantt svg");if(g)await grab("gantt",g.outerHTML,"Calendrier de la mission");
   const stamp=()=>{doc.setFont("helvetica","bold");doc.setFontSize(18);doc.setTextColor(30,33,37);doc.text("FIDEX",M,16);const w=doc.getTextWidth("FIDEX");doc.setTextColor(176,99,111);doc.text("5",M+w,16);
@@ -825,17 +922,17 @@ async function buildPdf(ks){
   const table=(head,body,opts={})=>{doc.autoTable({startY:y,head:[head.map(P)],body:body.map(r=>r.map(P)),margin:{left:M,right:M,top:28},styles:{font:"helvetica",fontSize:8.5,cellPadding:1.8,textColor:[30,33,37],lineColor:[227,228,232],lineWidth:.1},headStyles:{fillColor:[246,246,247],textColor:[95,100,108],fontStyle:"bold"},...opts});y=doc.lastAutoTable.finalY+5;};
   const pic=(key,x,w)=>{const im=img[key];if(!im)return 0;const h=w*im.h/im.w;doc.addImage(im.url,"PNG",x,y,w,h);return h;};
   const picFull=(key,w=CW)=>{const im=img[key];if(!im)return;const h=w*im.h/im.w;ensure(h+2);doc.addImage(im.url,"PNG",M+(CW-w)/2,y,w,h);y+=h+3;};
-  const R=k=>{const a=yr(state.cos[k].data,4);return a;};
+  const R=k=>{const a=yr(D(k),4);return a;};
   y=28;
   doc.setFont("helvetica","bold");doc.setFontSize(20);doc.setTextColor(30,33,37);
   doc.text(P(ks.length>1?"Rapport d'analyse des risques inhérents":"Rapport d'analyse : "+state.cos[ks[0]].name),M,y);y+=8;
-  para(`Sociétés analysées : ${ks.map(k=>state.cos[k].name).join(", ")}. Exercices ${YEARS[0]} à ${YEARS[4]}. Scénario de crise : ${scenActive()?scenName+" ("+SLIDERS.filter(s=>scen[s[0]]).map(s=>s[1].toLowerCase()+" "+sign(s[0],scen[s[0]])+s[5]).join(", ")+")":"aucun"}. Équipe : ${state.team.join(", ")}.`);
+  para(`Sociétés analysées : ${ks.map(k=>state.cos[k].name).join(", ")}. Exercices ${YEARS[0]} à ${YL(4)}. Scénario de crise : ${scenActive()?scenName+" ("+SLIDERS.filter(s=>scen[s[0]]).map(s=>s[1].toLowerCase()+" "+sign(s[0],scen[s[0]])+s[5]).join(", ")+")":"aucun"}. Équipe : ${state.team.join(", ")}.`);
   h3("Synthèse");
-  table(["Société","Devise","Note","M-score "+YEARS[4],"Lecture","Z' "+YEARS[4],"Z' après crise","Verdict"],ks.map(k=>{const be=beneish(state.cos[k].data,4),st=stress(k),r=rating(k,false);return[state.cos[k].name,state.cos[k].cur,`${r.grade} (${fmt(r.score)})`,fmt(be.M,2),M_LABEL[mZone(be.M)],fmt(st.zb,2),fmt(st.zs,2),VERD[st.verdict]];}));
+  table(["Société","Devise","Note","M-score "+YL(4),"Lecture","Z' "+YL(4),"Z' après crise","Verdict"],ks.map(k=>{const be=beneish(D(k),4),st=stress(k),r=rating(k,false);return[state.cos[k].name,state.cos[k].cur,`${r.grade} (${fmt(r.score)})`,fmt(be.M,2),M_LABEL[mZone(be.M)],fmt(st.zb,2),fmt(st.zs,2),VERD[st.verdict]];}));
   ks.forEach(k=>note(`${state.cos[k].name} - ${interpRating(k)}`));
   if(ks.length>1){note(interpMatrix());}
   // ratios
-  newPage();h2(`Évolution des ratios (${YEARS[0]}-${YEARS[4]})`);
+  newPage();h2(`Évolution des ratios (${YEARS[0]}-${YL(4)})`);
   const cw=(CW-6)/2;
   for(let i=0;i<RATIO_DEFS.length;i+=2){
     const a=img["r_"+RATIO_DEFS[i][0]],b=RATIO_DEFS[i+1]&&img["r_"+RATIO_DEFS[i+1][0]];
@@ -845,8 +942,11 @@ async function buildPdf(ks){
   RATIO_DEFS.forEach(([id,title,u,f])=>note(`${title}. ${interpRatio(id,f)}`));
   if(scenActive()&&img.dumb){newPage();h2("CrashTest : "+scenName);picFull("dumb");note(interpDumbbell());}
   ks.forEach(k=>{
-    const co=state.cos[k],c=hex(co.color),{be,al}=radarData(k,4),st=stress(k),bf=benford(co.data);
+    const co=state.cos[k],c=hex(co.color),{be,al}=radarData(k,4),st=stress(k),bf=benford(RD(k));
     newPage();h2(`${co.name}${co.country?" ("+co.country+")":""} - montants en ${co.cur}`,c);
+    if(fcActive(k)){const fp=fcParams(k);para(`Étude prévisionnelle ${CUR_YEAR} : les indicateurs « ${CUR_YEAR} (p) » reposent sur une croissance du chiffre d'affaires de ${fmt(fp.g*100,1)} % par an et une marge d'exploitation de ${fmt(fp.m*100,1)} % (${fp.src==="ia"?"proposées par l'IA":fp.src==="user"?"saisies par l'équipe":"tendance des derniers exercices"}).`,9,[95,100,108]);}
+    h3(`Points de vigilance pour ${CUR_YEAR}`);
+    table(["Point","Compte / assertion","Détail"],vigilPoints(k).map(p=>[p.t,p.a||"",p.d]),{columnStyles:{0:{cellWidth:50},1:{cellWidth:36}}});
     const im=img["radar_"+k];
     if(im){const w=70,h=w*im.h/im.w;doc.addImage(im.url,"PNG",M,y,w,h);
       doc.setFont("helvetica","normal");doc.setFontSize(9.5);doc.setTextColor(60,64,70);
@@ -854,10 +954,10 @@ async function buildPdf(ks){
     note(interpM(be));note(interpBenford(bf));
     h3("Chiffres clés");
     const keyF=["ca","ebit","net","cfo","rec","inv","ta","equity","ltd"];
-    table(["Poste",...YEARS.map(String)],keyF.map(f=>[FIELDS.find(x=>x[0]===f)[1],...co.data[f].map(v=>fmt(v,Math.abs(v)<100&&v%1?1:0))]),{columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"},5:{halign:"right"}}});
-    h3(`Indices Beneish (${YEARS[1]} à ${YEARS[4]})`);
-    const bes=[1,2,3,4].map(t=>beneish(co.data,t));
-    table(["Indice",...YEARS.slice(1).map(String)],["DSRI","GMI","AQI","SGI","DEPI","SGAI","LVGI","TATA","M"].map(id=>[id==="M"?"M-score":id,...bes.map(b=>fmt(b[id],id==="TATA"?3:2))]),{columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"}}});
+    table(["Poste",...YEARS.map((y,i)=>YL(i))],keyF.map(f=>[FIELDS.find(x=>x[0]===f)[1],...D(k)[f].map(v=>fmt(v,Math.abs(v)<100&&v%1?1:0))]),{columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"},5:{halign:"right"}}});
+    h3(`Indices Beneish (${YEARS[1]} à ${YL(4)})`);
+    const bes=[1,2,3,4].map(t=>beneish(D(k),t));
+    table(["Indice",...[1,2,3,4].map(i=>YL(i))],["DSRI","GMI","AQI","SGI","DEPI","SGAI","LVGI","TATA","M"].map(id=>[id==="M"?"M-score":id,...bes.map(b=>fmt(b[id],id==="TATA"?3:2))]),{columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"}}});
     h3(scenActive()?"CrashTest : "+scenName:"Solidité financière");
     const b=st.b;
     table(["Indicateur","Avant","Après"],[["Chiffre d'affaires",fmt(b.ca),fmt(st.ca)],["Résultat d'exploitation",fmt(b.ebit),fmt(st.ebit)],["Résultat net",fmt(b.net),fmt(st.net)],["Couverture des intérêts",isFinite(st.covB)?fmt(st.covB,1)+"x":"n.d.",isFinite(st.cov)?fmt(st.cov,1)+"x":"n.d."],["Altman Z'",fmt(st.zb,2),fmt(st.zs,2)]],{columnStyles:{1:{halign:"right"},2:{halign:"right"}}});
@@ -1102,13 +1202,123 @@ async function openTask(tid){
 
 document.getElementById("nm-form").onsubmit=createMission;
 document.getElementById("nm-cancel").onclick=()=>{const d=document.getElementById("mission-dlg");d.close?d.close():d.removeAttribute("open");};
+/* ---------- Prévision de l'année en cours ---------- */
+const CUR_YEAR=new Date().getFullYear();
+const RD=k=>state.cos[k].data;
+function fcActive(k){const c=state.cos[k];return !!c&&state.fcOn!==false&&(+c.lastYear||2025)<CUR_YEAR;}
+function isFc(t){return t===4&&keys().length>0&&fcActive(keys()[0]);}
+const YL=t=>`${YEARS[t]}${isFc(t)?" (p)":""}`;
+function realYears(k){const ly=+state.cos[k].lastYear||2025;return[ly-4,ly-3,ly-2,ly-1,ly];}
+function trendG(k){const d=RD(k),b=yr(d,4),p=yr(d,3),pp=yr(d,2);const g=[b.ca/p.ca-1,p.ca/pp.ca-1].filter(isFinite);const v=g.length?g.reduce((a,x)=>a+x,0)/g.length:0.03;return clamp(v,-0.2,0.3);}
+function fcParams(k){const c=state.cos[k],b=yr(RD(k),4),f=c.fc||{};
+  const g=isFinite(f.g)?f.g:trendG(k);const m=isFinite(f.m)?f.m:(isFinite(b.ebit/b.ca)?b.ebit/b.ca:NaN);
+  return{g,m,src:f.src||(isFinite(f.g)?"user":"trend"),why:f.why||"",gap:Math.max(1,CUR_YEAR-(+c.lastYear||2025))};}
+function proj(k){
+  const c=state.cos[k],b=yr(RD(k),4),{g,m,gap}=fcParams(k),f=Math.pow(1+g,gap),tax=c.hyp.tax||0.25;
+  const r=x=>isFinite(b[x])&&b.ca?b[x]/b.ca:NaN;
+  const o={};o.ca=b.ca*f;o.cogs=o.ca*r("cogs");o.sga=o.ca*r("sga");o.dep=b.dep*(1+(f-1)*0.5);o.ebit=o.ca*m;o.interest=b.interest;
+  const dE=o.ebit-b.ebit;o.net=b.net+dE*(1-tax);o.cfo=b.cfo+(o.net-b.net);
+  o.rec=b.rec*f;o.inv=b.inv*f;o.ca_cur=b.ca_cur*f;o.cl=b.cl*f;o.ppe=b.ppe*(1+(f-1)*0.5);
+  o.ta=b.ta+((o.ca_cur-b.ca_cur)||0)+((o.ppe-b.ppe)||0);o.ltd=b.ltd;o.equity=b.equity+o.net;o.re=b.re+o.net;
+  Object.keys(o).forEach(x=>{if(!isFinite(o[x]))o[x]=null;else o[x]=Math.round(o[x]*100)/100;});
+  return o;
+}
+function D(k){const c=state.cos[k];if(!fcActive(k))return c.data;const p=proj(k),o={};FIELDS.forEach(([f])=>{o[f]=[...c.data[f].slice(1),p[f]];});return o;}
+function withNoFc(fn){const old=state.fcOn;state.fcOn=false;try{return fn();}finally{state.fcOn=old;}}
+function setYears(){const a=keys()[0];const ly=a?(+state.cos[a].lastYear||2025):2025;YEARS=a&&fcActive(a)?[ly-3,ly-2,ly-1,ly,CUR_YEAR]:[ly-4,ly-3,ly-2,ly-1,ly];}
+
+/* ---------- Analyse IA par société ---------- */
+const AIST={};const AITRIED=new Set();
+function autoAI(){if(!sampler)return;keys().forEach(k=>{const c=state.cos[k];if(c&&(!c.ai||c.ai.year!==CUR_YEAR)&&!AITRIED.has(k))runAI(k);});}
+async function runAI(k,force){
+  if(!sampler||AIST[k]==="loading")return;const c=state.cos[k];if(!c)return;if(c.ai&&c.ai.year===CUR_YEAR&&!force)return;
+  AITRIED.add(k);AIST[k]="loading";renderAIBits();
+  const d=RD(k),b=yr(d,4),p=yr(d,3);const fig=o=>({ca:o.ca,ebit:o.ebit,net:o.net,total_actif:o.ta,capitaux_propres:o.equity,dettes_lt:o.ltd,flux_exploitation:o.cfo,stocks:o.inv,creances:o.rec});
+  const prompt=`Tu es l'assistant d'un cabinet d'audit (projet Master CCA). Société : « ${c.name} » ; pays : ${c.country||"non précisé"} ; secteur : ${c.sector||"non précisé"} ; devise : ${c.cur} (montants en millions). Dernier exercice publié : ${c.lastYear}. Année en cours (année de la mission d'audit) : ${CUR_YEAR}.
+Chiffres ${c.lastYear-1} : ${JSON.stringify(fig(p))}
+Chiffres ${c.lastYear} : ${JSON.stringify(fig(b))}
+Prépare l'étude prévisionnelle de l'année ${CUR_YEAR} pour cette société :
+1. une prévision prudente de croissance du chiffre d'affaires et de marge d'exploitation pour ${CUR_YEAR} ;
+2. les hypothèses de sensibilité du stress test (parts entre 0 et 1) ;
+3. 3 à 5 scénarios de risques propres à cette société, à son secteur et à son pays pour ${CUR_YEAR} (environnement économique, réglementaire, géopolitique, mais aussi risques opérationnels, de marché, de clients ou de gouvernance), avec des impacts chiffrés plausibles ;
+4. 5 points de vigilance concrets pour la mission d'audit ${CUR_YEAR}, chacun lié à un compte ou une assertion ;
+5. une courte analyse de l'environnement.
+Ne cite que des faits dont tu es raisonnablement sûr ; si tu n'es pas sûr d'un fait récent, reste général et dis-le. Réponds uniquement avec ce JSON :
+{"prevision":{"croissance_ca_pct":number,"marge_exploitation_pct":number|null,"justification":string},
+"hypotheses":{"rawShare":number,"pass":number,"salesFx":number,"costFx":number,"co2_mt":number,"co2exp":number,"float":number,"sea":number,"justification":string},
+"scenarios":[{"nom":string,"description":string,"probabilite":1|2|3|4|5,"impacts":{"oil":number,"fx":number,"demand":number,"log":number,"carbon":number,"rate":number,"cost":number,"oneoff":number}}],
+"points_attention":[{"titre":string,"detail":string,"compte":string}],
+"environnement":{"eco":string,"reg":string,"geo":string,"audit":string}}
+Signification : rawShare = part du coût des ventes liée aux matières premières ou à l'énergie ; pass = part d'une hausse de coûts répercutée sur les prix ; salesFx et costFx = part des ventes et des coûts exposés au dollar (négatif si la devise est le dollar) ; co2_mt = émissions annuelles en millions de tonnes ; co2exp = part soumise à une taxe carbone ; float = part de la dette à taux variable ; sea = part des achats transportés par mer. Impacts des scénarios : oil = variation du prix des matières premières/énergie en % ; fx = variation du dollar en % ; demand = baisse des volumes en % (0 à 40) ; log = surcoût du fret en % ; carbon = taxe carbone en €/t ; rate = hausse des taux en points de base ; cost = hausse des autres coûts d'exploitation en % ; oneoff = charge ou perte exceptionnelle en % du chiffre d'affaires. Mets 0 pour un facteur non concerné.`;
+  try{
+    const r=await sampler.json(prompt,{modelTier:"default"});
+    if(!r||typeof r!=="object")throw{code:"invalid_json"};
+    const cl=(v,a,b2)=>{const n=Number(v);return isFinite(n)?Math.max(a,Math.min(b2,n)):undefined;};
+    const scen2=(Array.isArray(r.scenarios)?r.scenarios:[]).slice(0,5).map(s=>({nom:String(s.nom||"Scénario").slice(0,80),description:String(s.description||"").slice(0,400),probabilite:cl(s.probabilite,1,5)||3,impacts:{oil:cl(s.impacts?.oil,-40,80)||0,fx:cl(s.impacts?.fx,-20,30)||0,demand:cl(s.impacts?.demand,0,40)||0,log:cl(s.impacts?.log,0,30)||0,carbon:cl(s.impacts?.carbon,0,200)||0,rate:cl(s.impacts?.rate,0,500)||0,cost:cl(s.impacts?.cost,0,30)||0,oneoff:cl(s.impacts?.oneoff,0,20)||0}}));
+    const pts=(Array.isArray(r.points_attention)?r.points_attention:[]).slice(0,6).map(x=>({titre:String(x.titre||"").slice(0,120),detail:String(x.detail||"").slice(0,400),compte:String(x.compte||"").slice(0,80)}));
+    c.ai={year:CUR_YEAR,at:Date.now(),scenarios:scen2,points:pts,prevision:r.prevision||{},hypJust:(r.hypotheses||{}).justification||""};
+    const hy=r.hypotheses||{};
+    if(!c.hypUser){const set=(key,v,a,b2)=>{const n=cl(v,a,b2);if(n!==undefined)c.hyp[key]=n;};
+      set("rawShare",hy.rawShare,0,1);set("pass",hy.pass,0,1);set("salesFx",hy.salesFx,-1,1);set("costFx",hy.costFx,-1,1);set("co2",hy.co2_mt,0,500);set("co2exp",hy.co2exp,0,1);set("float",hy.float,0,1);set("sea",hy.sea,0,1);}
+    if(!c.fcUser){const pv=r.prevision||{};const g=cl(pv.croissance_ca_pct,-50,50),m=cl(pv.marge_exploitation_pct,-50,60);
+      c.fc={g:g!==undefined?g/100:undefined,m:m!==undefined?m/100:undefined,src:"ia",why:String(pv.justification||"").slice(0,400)};}
+    const env=r.environnement||{};c.env=c.env||defEnv();ENV_F.forEach(([f])=>{if(!c.env[f]&&typeof env[f]==="string")c.env[f]=env[f].trim().slice(0,800);});
+    AIST[k]="ok";saveCo(k);refreshAll();
+  }catch(e){
+    const code=e&&e.code;AIST[k]="error:"+(code==="not_granted"?"L'IA n'est pas autorisée sur ce compte.":code==="rate_limited"?"Limite d'usage atteinte : réessayez plus tard.":"L'analyse IA a échoué : réessayez.");
+    renderAIBits();
+  }
+}
+function aiBadge(k){const s=AIST[k],c=state.cos[k];
+  if(s==="loading")return `<span class="pill warn">Analyse IA en cours…</span>`;
+  if(s&&s.startsWith("error:"))return `<span class="pill crit">${esc(s.slice(6))}</span>`;
+  if(c.ai)return `<span class="pill good">Analyse IA ${c.ai.year} · ${new Date(c.ai.at).toLocaleDateString("fr-FR")}</span>`;
+  return sampler?`<span class="pill na">Analyse IA non lancée</span>`:`<span class="pill na">Analyse IA disponible sur claude.ai</span>`;}
+function vigilPoints(k){const c=state.cos[k];
+  if(c.ai&&c.ai.points&&c.ai.points.length)return c.ai.points.map(p=>({t:p.titre,d:p.detail,a:p.compte,src:"ia"}));
+  return risks(k).sort((a,b)=>b.score-a.score).slice(0,5).map(r=>({t:r.risk,d:`${r.why}. ${r.proc}.`,a:r.compte,src:"calc"}));}
+function renderAIBits(){
+  const ks=keys();
+  const v=document.getElementById("vigil");
+  if(v){v.innerHTML=ks.length?`<div class="section-head"><h3>Points de vigilance pour ${CUR_YEAR}</h3></div>${ks.map(k=>{const pts=vigilPoints(k),c=state.cos[k];
+    return `<div style="margin-top:10px"><div class="co-head"><b style="color:${col(k)}">${esc(c.name)}</b><span>${aiBadge(k)} ${sampler?`<button class="btn small" data-ai="${k}">${c.ai?"Actualiser l'analyse IA":"Lancer l'analyse IA"}</button>`:""}</span></div>
+    <ol class="vlist">${pts.map(p=>`<li><b>${esc(p.t)}</b>${p.a?` <span class="tag">${esc(p.a)}</span>`:""}<div class="small">${esc(p.d)}</div></li>`).join("")}</ol>
+    ${pts[0]&&pts[0].src==="calc"?`<p class="small">Points déduits des scores. ${sampler?"L'analyse IA ajoutera les risques propres à la société.":""}</p>`:`<p class="small">Proposés par l'IA à partir des chiffres et de ses connaissances : à vérifier.</p>`}</div>`;}).join("")}`:"";}
+  const s=document.getElementById("ai-scen");
+  if(s){s.innerHTML=ks.length?`<h3>Risques spécifiques aux sociétés (IA)</h3><p class="small">Scénarios ${CUR_YEAR} proposés par l'IA pour chaque société : cliquez pour les appliquer au stress test. Les impacts sont des ordres de grandeur à discuter.</p>${ks.map(k=>{const c=state.cos[k],sc=(c.ai&&c.ai.scenarios)||[];
+    return `<div style="margin-top:10px"><div class="co-head"><b style="color:${col(k)}">${esc(c.name)}</b><span>${aiBadge(k)} ${sampler?`<button class="btn small" data-ai="${k}">${c.ai?"Actualiser":"Lancer l'analyse IA"}</button>`:""}</span></div>
+    ${sc.length?`<div class="scen-list">${sc.map((x,i)=>`<button class="scen" data-scen="${k}|${i}"><b>${esc(x.nom)}</b><span class="small">${esc(x.description)}</span><span class="small">Probabilité ${x.probabilite}/5 · ${Object.entries(x.impacts).filter(([,v])=>v).map(([f,v])=>`${NAMES[f]} ${sign(f,v)}${(SLIDERS.find(s2=>s2[0]===f)||[])[5]||""}`).join(", ")||"impact limité"}</span></button>`).join("")}</div>`:`<p class="small">${AIST[k]==="loading"?"Génération des scénarios…":"Pas encore de scénarios spécifiques."}</p>`}</div>`;}).join("")}`:"";
+    s.querySelectorAll("[data-scen]").forEach(b=>b.onclick=()=>{const [k,i]=b.dataset.scen.split("|");const x=state.cos[k].ai.scenarios[+i];scen={...ZERO,...x.impacts};scenName=`${x.nom} (${state.cos[k].name})`;renderSliders();updateStress();document.getElementById("stress-cards").scrollIntoView({behavior:"smooth"});});}
+  const mv=document.getElementById("mission-vigil");
+  if(mv&&ks.length){const k=keys().includes(ui.missionCo)?ui.missionCo:ks[0];const pts=vigilPoints(k);
+    mv.innerHTML=`<div class="section-head"><h3>Points d'attention pour la mission ${CUR_YEAR} : ${esc(state.cos[k].name)}</h3>${aiBadge(k)}</div><ol class="vlist">${pts.map(p=>`<li><b>${esc(p.t)}</b>${p.a?` <span class="tag">${esc(p.a)}</span>`:""}<div class="small">${esc(p.d)}</div></li>`).join("")}</ol>
+    ${fcActive(k)?`<p class="small">Seuil, risques et notation de cet onglet sont calculés sur la prévision ${CUR_YEAR} (voir l'onglet Données).</p>`:""}`;}
+  document.querySelectorAll("[data-ai]").forEach(b=>b.onclick=()=>runAI(b.dataset.ai,true));
+  const fcb=document.getElementById("fc-toggle");if(fcb)fcb.checked=state.fcOn!==false;
+}
+function renderFcCard(){
+  const box=document.getElementById("fc-card");if(!box||!keys().length)return;
+  const k=keys().includes(ui.dataCo)?ui.dataCo:keys()[0],c=state.cos[k];
+  if((+c.lastYear||2025)>=CUR_YEAR){box.innerHTML=`<h3>Prévision</h3><p class="small">Le dernier exercice saisi est ${c.lastYear} : aucune prévision n'est nécessaire.</p>`;return;}
+  const p=fcParams(k),pr=proj(k);
+  box.innerHTML=`<div class="section-head"><h3>Prévision ${CUR_YEAR} de ${esc(c.name)}</h3><label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fc-toggle2" ${state.fcOn!==false?"checked":""}> Inclure la prévision dans les analyses</label></div>
+   <p class="small">Méthode : ${p.src==="ia"?"proposée par l'IA":p.src==="user"?"saisie par l'équipe":"tendance des derniers exercices"}${p.gap>1?` · projection sur ${p.gap} ans`:""}. Les postes du bilan suivent l'activité, les capitaux propres intègrent le résultat prévu (sans dividende).</p>
+   ${p.why?interp(esc(p.why)):""}
+   <div class="fields" style="margin-top:10px"><label for="fc-g">Croissance annuelle du CA (%)<input type="text" id="fc-g" inputmode="decimal" value="${fmt(p.g*100,1)}"></label><label for="fc-m">Marge d'exploitation ${CUR_YEAR} (%)<input type="text" id="fc-m" inputmode="decimal" value="${fmt(p.m*100,1)}"></label></div>
+   <div class="actions" style="margin-top:8px"><button class="btn small" id="fc-reset">Revenir à la tendance</button><span class="small">CA prévu : <b>${fmt(pr.ca)}</b> ${esc(c.cur)} · EBIT : <b>${fmt(pr.ebit)}</b> · résultat net : <b>${fmt(pr.net)}</b></span></div>`;
+  const upd=()=>{const g=parseNum(document.getElementById("fc-g").value),m=parseNum(document.getElementById("fc-m").value);c.fc={...(c.fc||{}),g:isFinite(g)?g/100:undefined,m:isFinite(m)?m/100:undefined,src:"user",why:""};c.fcUser=true;saveCo(k);refreshAll();};
+  document.getElementById("fc-g").onchange=upd;document.getElementById("fc-m").onchange=upd;
+  document.getElementById("fc-reset").onclick=()=>{c.fc=null;c.fcUser=false;saveCo(k);refreshAll();};
+  document.getElementById("fc-toggle2").onchange=e=>{state.fcOn=e.target.checked;save();refreshAll();};
+}
+
 /* ---------- Bibliothèque d'analyses (historique) ---------- */
 const libKeys=()=>Object.keys(state.cos).sort((a,b)=>(state.cos[b].updatedAt||0)-(state.cos[a].updatedAt||0));
-const ZERO={oil:0,fx:0,demand:0,log:0,carbon:0,rate:0};
+const ZERO={oil:0,fx:0,demand:0,log:0,carbon:0,rate:0,cost:0,oneoff:0};
 const defEnv=()=>({eco:"",reg:"",geo:"",audit:""});
 const STOREX={mode:"local",db:null,canWrite:null,me:null,unsub:null,loaded:false,localOnly:[],pend:{}};
 function nextColor(){const used=libKeys().map(k=>state.cos[k].color);return PALETTE.find(c=>!used.includes(c))||PALETTE[libKeys().length%PALETTE.length];}
-function setYears(){const a=keys()[0];const ly=a?(+state.cos[a].lastYear||2025):2025;YEARS=[ly-4,ly-3,ly-2,ly-1,ly];}
+
 function openAnalyses(ids){state.order=ids.filter(k=>state.cos[k]);ui.planCo="all";ui.dataCo=state.order[0];ui.missionCo=state.order[0];save();refreshAll();}
 function closeAnalyses(){state.order=[];save();refreshAll();}
 function touch(k){const co=state.cos[k];if(co){co.updatedAt=Date.now();}}
@@ -1138,10 +1348,10 @@ function renderHistory(){
   const t=document.getElementById("hist-table");
   if(!all.length){t.innerHTML=`<tbody><tr><td class="small" style="padding:18px 8px">Aucune analyse pour l'instant. Cliquez sur « + Nouvelle analyse » ou chargez un exemple.</td></tr></tbody>`;}
   else t.innerHTML=`<thead><tr><th style="width:28px"><span class="sr">Sélection</span></th><th>Société</th><th>Pays</th><th class="n">Exercice</th><th>Note</th><th class="n">M-score</th><th class="n">Z'</th><th>Verdict</th><th>Mise à jour</th><th></th></tr></thead><tbody>${rows.map(k=>{const c=state.cos[k];
-    let r,be,st;try{withScen(ZERO,()=>{r=rating(k,false);be=beneish(c.data,4);st=stress(k);});}catch(e){}
+    let r,be,st;try{withNoFc(()=>withScen(ZERO,()=>{r=rating(k,false);be=beneish(D(k),4);st=stress(k);}));}catch(e){}
     const open=state.order.includes(k);
     return `<tr class="${open?"row-open":""}"><td><input type="checkbox" data-sel="${k}" ${histSel.has(k)?"checked":""} aria-label="Sélectionner ${esc(c.name)}"></td>
-    <td><b style="color:${c.color}">${esc(c.name)}</b>${c.exampleOf?' <span class="tag">exemple</span>':""}<div class="small">${esc(c.sector||"")}</div></td><td>${esc(c.country||"")}</td><td class="n">${esc(c.lastYear||"")}</td>
+    <td><b style="color:${c.color}">${esc(c.name)}</b>${c.exampleOf?' <span class="tag">exemple</span>':""}${c.mode==="quick"?' <span class="tag">rapide</span>':""}${c.aiFilled?' <span class="tag">lu par l\'IA</span>':""}<div class="small">${esc(c.sector||"")}</div></td><td>${esc(c.country||"")}</td><td class="n">${esc(c.lastYear||"")}</td>
     <td>${r?`<b class="rating ${r.zone}" style="font-size:18px">${r.grade}</b>`:"–"}</td><td class="n">${be?fmt(be.M,2):"–"}</td><td class="n">${st?fmt(st.zb,2):"–"}</td><td>${st?pill(st.verdict,VERD[st.verdict]):""}</td>
     <td class="small">${c.updatedAt?new Date(c.updatedAt).toLocaleDateString("fr-FR"):""}</td>
     <td style="white-space:nowrap"><button class="btn small primary" data-openk="${k}">${open?"Ouverte":"Ouvrir"}</button> <button class="btn small" data-pdfk="${k}">PDF</button> <button class="btn small danger" data-delk="${k}" ${STOREX.mode==="db"&&STOREX.canWrite===false?"disabled":""}>Supprimer</button></td></tr>`;}).join("")}</tbody>`;
@@ -1155,11 +1365,13 @@ function renderOpenSection(){
   const ks=keys(),sec=document.getElementById("open-section");sec.hidden=!ks.length;
   const bar=document.getElementById("ctxbar");
   if(!ks.length){bar.innerHTML=`<span class="small">Aucune analyse ouverte.</span> <a href="#accueil" class="small">Choisir dans l'historique</a>`;return;}
-  bar.innerHTML=`<span class="small">${ks.length>1?"Comparaison":"Analyse ouverte"} :</span> ${ks.map(k=>`<span class="chip" style="--co:${col(k)}">${esc(state.cos[k].name)}</span>`).join(" ")} <span class="small">exercice ${YEARS[4]}</span> <button class="btn small" id="ctx-close">Fermer</button>`;
+  bar.innerHTML=`<span class="small">${ks.length>1?"Comparaison":"Analyse ouverte"} :</span> ${ks.map(k=>`<span class="chip" style="--co:${col(k)}">${esc(state.cos[k].name)}</span>`).join(" ")} <span class="small">${isFc(4)?`exercices ${YEARS[0]}–${YEARS[3]} + prévision ${CUR_YEAR}`:`exercice ${YL(4)}`}</span> <label class="small" style="display:inline-flex;gap:4px;align-items:center"><input type="checkbox" id="fc-toggle" ${state.fcOn!==false?"checked":""}> Prévision ${CUR_YEAR}</label> <button class="btn small" id="ctx-close">Fermer</button>`;
+  document.getElementById("fc-toggle").onchange=e=>{state.fcOn=e.target.checked;save();refreshAll();};
   document.getElementById("ctx-close").onclick=closeAnalyses;
   const yrs=new Set(ks.map(k=>state.cos[k].lastYear||2025));
   document.getElementById("open-title").textContent=ks.length>1?`Comparaison : ${ks.map(k=>state.cos[k].name).join(", ")}`:`Analyse : ${state.cos[ks[0]].name}`;
-  document.getElementById("open-warn").textContent=yrs.size>1?`Attention : les sociétés comparées n'ont pas le même dernier exercice (${[...yrs].join(", ")}). Les graphiques utilisent les années de ${state.cos[ks[0]].name}.`:"";
+  const part=ks.filter(k=>FIELDS.some(([f])=>[3,4].some(t=>state.cos[k].data[f][t]==null)));
+  document.getElementById("open-warn").textContent=(part.length?`Analyse partielle (${part.map(k=>state.cos[k].name).join(", ")}) : certains postes manquent, les scores concernés sont marqués « non calculé ». Complétez-les dans l'onglet Données. `:"")+(yrs.size>1?`Attention : les sociétés comparées n'ont pas le même dernier exercice (${[...yrs].join(", ")}). Les graphiques utilisent les années de ${state.cos[ks[0]].name}.`:"");
 }
 
 /* ---------- Import Excel / CSV et modèle ---------- */
@@ -1274,7 +1486,7 @@ function applyEmpty(){
 }
 
 function alertBar(t){const b=document.getElementById("ctxbar");const s=document.createElement("span");s.className="msg err";s.textContent=t;b.append(s);setTimeout(()=>s.remove(),5000);}
-function refreshAll(){ensureState();setYears();renderHistory();renderOpenSection();renderPdfSelect();renderOverview();renderMatrix();renderPlan();renderRadar();renderStress();renderRatios();renderMission();renderEnv();renderData();applyEmpty();}
+function refreshAll(){ensureState();setYears();renderHistory();renderOpenSection();renderPdfSelect();renderOverview();renderMatrix();renderPlan();renderRadar();renderStress();renderRatios();renderMission();renderEnv();renderData();renderFcCard();renderAIBits();applyEmpty();setTimeout(autoAI,0);}
 document.getElementById("hist-template").onclick=()=>downloadTemplate();
 document.getElementById("hist-load").onclick=()=>loadExample(document.getElementById("hist-example").value);
 document.getElementById("hist-compare").onclick=()=>{openAnalyses([...histSel]);document.getElementById("open-section").scrollIntoView({behavior:"smooth"});};
