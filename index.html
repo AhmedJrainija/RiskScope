@@ -40,7 +40,7 @@
         <button class="btn primary" id="open-new">+ Nouvelle analyse</button>
         <button class="btn" id="hist-template">Télécharger le modèle Excel</button>
         <label for="hist-example" class="small">Exemple :</label>
-        <select id="hist-example"><option value="all">SNEP, Arkema et Dow (comparaison)</option><option value="snep">SNEP (Maroc)</option><option value="arkema">Arkema (France)</option><option value="dow">Dow (États-Unis)</option></select>
+        <select id="hist-example"><option value="all">Les 4 sociétés (démonstration)</option><option value="snep">SNEP (Maroc)</option><option value="arkema">Arkema (France)</option><option value="dow">Dow (États-Unis)</option><option value="braskem">Braskem (Brésil) : société en difficulté</option></select>
         <button class="btn" id="hist-load">Charger</button>
       </div>
     </div>
@@ -125,6 +125,7 @@
       <div class="grid3" id="benford"></div>
       <div class="exp"><button class="btn small" data-csv="benford">Données CSV</button></div>
     </div>
+    <div class="card" id="je-card"></div>
   </section>
 
   <!-- CRASHTEST -->
@@ -139,6 +140,7 @@
     </div>
     <div class="card" id="ai-scen"></div>
     <div class="grid3" id="stress-cards"></div>
+    <div class="card" id="mc-card"></div>
     <div class="card">
       <h3>Marge d'exploitation : avant et après la crise</h3>
       <div id="dumbbell"></div>
@@ -193,6 +195,9 @@
       <div id="mission-interp"></div>
       <div class="exp"><button class="btn small" data-csv="mission">Données CSV (société affichée)</button></div>
     </div>
+    <div class="card" id="gc-card"></div>
+    <div class="card" id="ra520-card"></div>
+    <div class="card" id="sample-card"></div>
     <div class="card">
       <h3>Équipe et calendrier de la mission</h3>
       <p class="small">Saisissez les noms des membres, puis les dates et le responsable de chaque phase.</p>
@@ -355,11 +360,17 @@
   <div class="deck-foot"><button class="btn" id="deck-prev">← Précédent</button><button class="btn primary" id="deck-next">Suivant →</button></div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<!-- Bibliothèques : d'abord le dossier lib/ du projet (fonctionne sans internet), sinon cdnjs -->
+<script src="lib/jspdf.umd.min.js"></script>
+<script>if(!(window.jspdf))document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"><\/script>');</script>
+<script src="lib/xlsx.full.min.js"></script>
+<script>if(!(window.XLSX))document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>');</script>
+<script src="lib/pdf.min.js"></script>
+<script>if(!(window.pdfjsLib))document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"><\/script>');</script>
+<script src="lib/pdf.worker.min.js"></script>
+<script>if(!(window.pdfjsWorker))document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"><\/script>');</script>
+<script src="lib/jspdf.plugin.autotable.min.js"></script>
+<script>if(!(window.jspdf&&window.jspdf.jsPDF&&window.jspdf.jsPDF.API&&window.jspdf.jsPDF.API.autoTable))document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"><\/script>');</script>
 <script src="app.js"></script>
 </body>
 </html>

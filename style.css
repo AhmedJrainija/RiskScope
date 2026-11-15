@@ -108,7 +108,8 @@ dialog::backdrop{background:rgba(20,22,26,.45)}
 .dlg-body{padding:16px 18px;display:grid;gap:16px}
 .dlg-foot{display:flex;justify-content:flex-end;gap:8px;padding:14px 18px;border-top:1px solid var(--line);position:sticky;bottom:0;background:#fff}
 .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-.fields label{display:grid;gap:4px;font-size:13px;font-weight:500}
+.fields label{display:grid;gap:4px;font-size:13px;font-weight:500;min-width:0}
+.fields input,.fields select{width:100%;min-width:0}
 details summary{cursor:pointer;font-weight:600;font-size:14px}
 .q{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px}
 .q:last-child{border-bottom:0}
@@ -176,6 +177,8 @@ input[type=date]{border:1px solid var(--line);border-radius:8px;padding:6px 8px;
 .dlg-body textarea{background:#fff;font:13.5px var(--body);min-height:70px}
 .dos textarea,.donts textarea{min-height:130px}
 .ctxbar{max-width:1180px;margin:0 auto;padding:10px 16px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.coswitch button[aria-pressed="true"]{background:var(--co,var(--ink));border-color:var(--co,var(--ink));color:#fff}
+.coswitch button{border-left:3px solid var(--co,var(--line))}
 .is-hidden{display:none!important}
 .row-open td{background:var(--accent-soft)}
 .open-section{display:grid;gap:18px;border-top:2px solid var(--line);padding-top:18px}

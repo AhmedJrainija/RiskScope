@@ -392,7 +392,7 @@ const CI_A=[["Oui",0],["Partiel",1],["Non",2]];
 const BASES={ca:["Chiffre d'affaires",0.5],ta:["Total actif",1],equity:["Capitaux propres",2],pbt:["Résultat avant impôt",5]};
 function defMission(){return{base:"ca",rate:0.5,perf:70,ci:CI_Q.map(()=>1)};}
 function ensureState(){
-  Object.keys(state.cos).forEach(k=>{const c=state.cos[k];if(!c.mission)c.mission=defMission();if(!c.env)c.env=defEnv();if(!c.lastYear)c.lastYear=2025;});
+  Object.keys(state.cos).forEach(k=>{const c=state.cos[k];if(!c.mission)c.mission=defMission();if(!c.env)c.env=defEnv();if(!c.lastYear)c.lastYear=2025;if(typeof applyPrep==="function")applyPrep(k);});
   state.team=state.team||["Membre 1","Membre 2","Membre 3","Membre 4","Membre 5"];
   state.phases=state.phases||[
     {name:"Prise de connaissance",start:"2026-11-16",end:"2026-11-29",who:0},
@@ -521,7 +521,7 @@ function aiContext(){
     const last=t=>Object.fromEntries(FIELDS.map(([f])=>[f,d[f][t]]));
     return{nom:co.name,pays:co.country,devise:co.cur,exercice_N:YEARS[4],comptes_N_moins_1:last(3),comptes_N:last(4),beneish_M_N:+fmt(be.M,2).replace(",","."),beneish_M_N_moins_1:+fmt(be24.M,2).replace(",","."),DSRI_N:be.DSRI,altman_Z_N:st.zb,altman_Z_apres_crise:st.zs,verdict_crise:VERD[st.verdict],note:r.grade,score_note:Math.round(r.score),
       seuil_signification:mt.neg?null:Math.round(mt.sm),seuil_planification:mt.neg?null:Math.round(mt.sp),base_seuil:BASES[state.cos[k].mission.base][0],risque_controle:LVL[cs.lvl],
-      prevision:fcActive(k)?{annee:CUR_YEAR,...fcParams(k),comptes_prevus:proj(k)}:null,points_vigilance:vigilPoints(k),scenarios_ia:(co.ai&&co.ai.scenarios)||[],
+      prevision:fcActive(k)?{annee:CUR_YEAR,...fcParams(k),comptes_prevus:proj(k)}:null,points_vigilance:vigilPoints(k),continuite:(()=>{const G=gcEval(k);return{conclusion:GC_C[G.lvl],indicateurs:G.A.filter(x=>x.v).map(x=>x.l)};})(),monte_carlo:(()=>{const M=mcRun(k);return{proba_detresse:M.pDist,proba_perte:M.pLoss,z_median:M.z50};})(),test_ecritures:JE[k]?(()=>{const T=jeTests(k);return{ecritures:T.n,signalees:T.flagged.length,prioritaires:T.prio,tests:T.cnt,benford_mad:T.ben.mad};})():null,scenarios_ia:(co.ai&&co.ai.scenarios)||[],
       risques:risks(k).sort((a,b)=>b.score-a.score).map(x=>({risque:x.risque||x.risk,proba:x.prob,impact:x.impact,indicateur:x.why,procedure:x.proc}))};})};
   return JSON.stringify(o,(k,v)=>typeof v==="number"?Math.round(v*1000)/1000:v);
 }
@@ -601,6 +601,7 @@ document.addEventListener("keydown",e=>{if(!document.getElementById("deck").clas
 /* ---------- Guides d'utilisation ---------- */
 const GUIDES={
 accueil:{t:"Comment utiliser l'accueil",steps:[
+ "<b>Changer de société</b> : la barre « Société » en haut de chaque onglet ouvre SNEP, Arkema, Dow, Braskem ou les autres analyses d'un clic (ou avec les flèches ← → du clavier). « Comparer toutes » les affiche côte à côte.",
  "<b>Nouvelle analyse</b> : téléchargez le modèle Excel, remplissez les 17 postes sur 5 exercices, puis importez le fichier dans « + Nouvelle analyse ». Vous pouvez aussi coller les chiffres depuis Excel ou les saisir à la main.",
  "<b>Historique</b> : chaque analyse est conservée avec sa note, son M-score, son Altman Z' et son verdict. « Ouvrir » affiche l'analyse ; « PDF » télécharge le rapport ; la recherche filtre par nom, pays ou secteur.",
  "<b>Comparer</b> : cochez 2 à 4 analyses puis « Comparer la sélection ». Tous les onglets (Fraud Radar, CrashTest, Ratios, Mission…) affichent alors les sociétés côte à côte.",
@@ -608,12 +609,14 @@ accueil:{t:"Comment utiliser l'accueil",steps:[
  "<b>Exemples</b> : SNEP, Arkema et Dow se chargent d'un clic pour découvrir l'outil ou faire une démonstration.",
  "<b>Lire l'analyse ouverte</b> : cartes de synthèse, matrice des risques (probabilité × impact) et plan de mission généré, avec interprétations et exports PDF ou CSV."]},
 radar:{t:"Comment utiliser le Fraud Radar",steps:[
- "<b>Choisir l'exercice</b> en haut à droite : chaque indice compare l'année choisie à la précédente. L'année marquée (p) est la prévision de l'année en cours : elle montre si les tendances actuelles déclencheraient une alerte.",
+ "<b>Choisir l'exercice</b> en haut à droite : chaque indice compare l'année choisie à la précédente. Par défaut, le radar porte sur le dernier exercice publié. L'année marquée (p) est la prévision de l'année en cours : les postes y sont projetés proportionnellement, son M-score n'indique donc qu'une tendance.",
  "<b>Beneish M-score</b> : au-dessus de −1,78, risque de manipulation probable ; entre −2,22 et −1,78, zone grise ; en dessous de −2,22, pas d'alerte.",
  "<b>Radar</b> : six axes de 0 (normal) à 100 (alerte forte). Créances = DSRI, Marges = GMI, Accruals = TATA (résultat non encaissé), Endettement, Stocks, Benford.",
  "<b>Loi de Benford</b> : dans des données naturelles, le chiffre 1 apparaît en premier dans environ 30 % des cas. Un écart important peut signaler des chiffres arrangés.",
+ "<b>Test des écritures (ISA 240)</b> : importez le grand livre (FEC, Excel ou CSV) ou générez le grand livre fictif. Huit tests (week-end, montants ronds, clôture, seuil, comptes rares, utilisateurs rares, libellés sensibles, doublons) et Benford sur les montants réels désignent les écritures à justifier en priorité.",
  "<b>À retenir</b> : ces scores signalent où chercher ; ils ne prouvent pas une fraude. Chaque alerte se traduit par des tests (circularisation, cut-off, revue des écritures)."]},
 crashtest:{t:"Comment utiliser le CrashTest",steps:[
+ "<b>Monte-Carlo</b> : sous les cartes, RiskScope simule 1 000 années en tirant tous les facteurs au hasard (et les risques IA selon leur probabilité). Lisez la probabilité de zone de détresse : au-delà de 20 %, c'est un indicateur de doute sur la continuité.",
  "<b>Choisir une crise</b> : risques spécifiques proposés par l'IA pour chaque société (en haut), crises génériques (choc pétrolier, mer Rouge, dollar fort…) ou réglage libre des huit curseurs. Le stress test s'applique à la prévision de l'année en cours quand elle est activée.",
  "<b>Lire les cartes</b> : les comptes du dernier exercice sont recalculés. Le verdict passe à « Continuité menacée » si l'Altman Z' tombe sous 1,23, si les intérêts ne sont plus couverts 1,5 fois ou si le résultat devient négatif.",
  "<b>Effet de chaque facteur</b> : barres rouges = perte, vertes = gain, en millions de la devise de la société.",
@@ -626,6 +629,7 @@ ratios:{t:"Comment lire les ratios et la notation",steps:[
  "<b>Endettement</b> = dettes long terme / capitaux propres ; au-dessus de 1, la société dépend fortement de ses prêteurs. <b>Délai clients</b> = créances / CA × 365 ; au-delà de 90 jours, risque de recouvrement.",
  "<b>Couverture des intérêts</b> = EBIT / charges d'intérêts ; sous 1,5, la société peine à payer ses intérêts. Chaque graphique s'exporte en image (PNG) ou en données (CSV)."]},
 mission:{t:"Comment planifier la mission",steps:[
+ "<b>Travaux d'audit</b> (en bas) : continuité d'exploitation (ISA 570, indicateurs calculés + à vérifier), revue analytique (ISA 520, variations significatives à expliquer) et échantillonnage par unités monétaires (taille, intervalle et tirage des écritures du grand livre).",
  "<b>0. Points d'attention</b> : en haut, les points de vigilance de l'année en cours (proposés par l'IA ou déduits des scores). Seuil, risques et notation sont calculés sur la prévision de l'année en cours.",
  "<b>1. Seuil de signification</b> : choisissez une base (CA, total actif, capitaux propres ou résultat) et un taux. Le seuil de planification (souvent 50 à 75 % du seuil) sert à dimensionner les tests ; les anomalies sous 5 % du seuil sont négligées.",
  "<b>2. Contrôle interne</b> : répondez aux 8 questions d'après la prise de connaissance. Plus il y a de « Non », plus le risque lié au contrôle est élevé.",
@@ -834,8 +838,9 @@ function renderPlan(){
 }
 function renderRadar(){
   const ys=document.getElementById("year-seg");
+  if(!ui.yearUser)ui.year=keys().length&&isFc(4)?3:4;
   ys.innerHTML=[1,2,3,4].map(t=>`<button aria-pressed="${ui.year===t}" data-t="${t}">${YL(t)}</button>`).join("");
-  ys.querySelectorAll("button").forEach(b=>b.onclick=()=>{ui.year=+b.dataset.t;renderRadar();});
+  ys.querySelectorAll("button").forEach(b=>b.onclick=()=>{ui.year=+b.dataset.t;ui.yearUser=true;renderRadar();});
   const t=ui.year;
   document.getElementById("radar-cards").innerHTML=keys().map(k=>{
     const {be,v,al}=radarData(k,t);const z=mZone(be.M);
@@ -958,7 +963,7 @@ function renderMission(){
     document.getElementById("ph-s-"+i).onchange=e=>{if(e.target.value){p.start=e.target.value;save();drawGantt();}};
     document.getElementById("ph-e-"+i).onchange=e=>{if(e.target.value){p.end=e.target.value;save();drawGantt();}};
     document.getElementById("ph-w-"+i).onchange=e=>{p.who=+e.target.value;save();drawGantt();};});
-  drawGantt();
+  drawGantt();renderGC();renderRA520();renderSample();
 }
 function ganttInterp(){const d=s=>new Date(s+"T00:00:00");const ph=state.phases;const a=d(ph.reduce((x,p)=>p.start<x?p.start:x,ph[0].start)),b=d(ph.reduce((x,p)=>p.end>x?p.end:x,ph[0].end));const wk=Math.round((b-a)/864e5/7);
   const over=ph.some((p,i)=>i>0&&p.start<=ph[i-1].end);
@@ -1008,9 +1013,17 @@ async function buildPdf(ks){
   ks.forEach(k=>{
     const co=state.cos[k],c=hex(co.color),{be,al}=radarData(k,4),st=stress(k),bf=benford(RD(k));
     newPage();h2(`${co.name}${co.country?" ("+co.country+")":""} - montants en ${co.cur}`,c);
-    if(fcActive(k)){const fp=fcParams(k);para(`Étude prévisionnelle ${CUR_YEAR} : les indicateurs « ${CUR_YEAR} (p) » reposent sur une croissance du chiffre d'affaires de ${fmt(fp.g*100,1)} % par an et une marge d'exploitation de ${fmt(fp.m*100,1)} % (${fp.src==="ia"?"proposées par l'IA":fp.src==="user"?"saisies par l'équipe":"tendance des derniers exercices"}).`,9,[95,100,108]);}
+    if(fcActive(k)){const fp=fcParams(k);para(`Étude prévisionnelle ${CUR_YEAR} : les indicateurs « ${CUR_YEAR} (p) » reposent sur une croissance du chiffre d'affaires de ${fmt(fp.g*100,1)} % par an et une marge d'exploitation de ${fmt(fp.m*100,1)} % (${fp.src==="ia"?"proposées par l'IA":fp.src==="prep"?"préparées par l'équipe FIDEX5":fp.src==="user"?"saisies par l'équipe":"tendance des derniers exercices"}).`,9,[95,100,108]);}
     h3(`Points de vigilance pour ${CUR_YEAR}`);
     table(["Point","Compte / assertion","Détail"],vigilPoints(k).map(p=>[p.t,p.a||"",p.d]),{columnStyles:{0:{cellWidth:50},1:{cellWidth:36}}});
+    {const G=gcEval(k),M=mcRun(k);h3(`Continuité d'exploitation (ISA 570) : ${GC_C[G.lvl]}`);
+     table(["Indicateur","Présent","Valeur"],[...G.A.map(x=>[x.l,x.v?"Oui":"Non",x.x]),...GC_MAN.map((l,i)=>[l,(co.mission.gc||[])[i]?"Oui":"Non",""])],{columnStyles:{1:{cellWidth:18},2:{cellWidth:34}}});
+     h3(`CrashTest Monte-Carlo (${fmt(M.N)} simulations ${YL(4)})`);
+     para(`Probabilité de zone de détresse : ${pct(M.pDist,0)} ; de perte nette : ${pct(M.pLoss,0)} ; couverture des intérêts < 1,5 : ${pct(M.pCov,0)}. Z' pessimiste / médian / optimiste : ${fmt(M.z5,2)} / ${fmt(M.z50,2)} / ${fmt(M.z95,2)}.`);
+     if(JE[k]){const T=jeTests(k);h3(`Test des écritures (ISA 240)${JE[k].demo?" - grand livre fictif de démonstration":""}`);para(`${fmt(T.n)} écritures analysées, ${fmt(T.flagged.length)} signalées, ${fmt(T.prio)} à examiner en priorité. Benford : écart moyen ${fmt(T.ben.mad,3)}.`);
+       table(["Date","Compte","Libellé","Montant","Tests"],T.flagged.slice(0,10).map(x=>[fmtD(x.r.d),x.r.acc,x.r.lib||"(vide)",fmt(x.r.amt,0),x.f.map(id=>JE_T.find(t=>t[0]===id)[1]).join(", ")]),{columnStyles:{0:{cellWidth:20},1:{cellWidth:18},3:{cellWidth:24}}});}
+     const RA=raRows(k).P.filter(x=>x.sig),RY=realYears(k);
+     if(RA.length){h3(`Revue analytique ${RY[3]}-${RY[4]} : variations significatives`);table(["Poste","Variation","%","Explication"],RA.map(x=>[x.l,fmt(x.dv,1),pct(x.dp,0),((co.mission.raExp||{})[x.f])||"À expliquer"]),{columnStyles:{0:{cellWidth:44},1:{cellWidth:22},2:{cellWidth:16}}});}}
     const im=img["radar_"+k];
     if(im){const w=70,h=w*im.h/im.w;doc.addImage(im.url,"PNG",M,y,w,h);
       doc.setFont("helvetica","normal");doc.setFontSize(9.5);doc.setTextColor(60,64,70);
@@ -1287,7 +1300,7 @@ function proj(k){
   Object.keys(o).forEach(x=>{if(!isFinite(o[x]))o[x]=null;else o[x]=Math.round(o[x]*100)/100;});
   return o;
 }
-function D(k){const c=state.cos[k];if(!fcActive(k))return c.data;const p=proj(k),o={};FIELDS.forEach(([f])=>{o[f]=[...c.data[f].slice(1),p[f]];});return o;}
+function D(k){if(DMEMO&&DMEMO[k])return DMEMO[k];const c=state.cos[k];if(!fcActive(k))return c.data;const p=proj(k),o={};FIELDS.forEach(([f])=>{o[f]=[...c.data[f].slice(1),p[f]];});return o;}
 function withNoFc(fn){const old=state.fcOn;state.fcOn=false;try{return fn();}finally{state.fcOn=old;}}
 function setYears(){const a=keys()[0];const ly=a?(+state.cos[a].lastYear||2025):2025;YEARS=a&&fcActive(a)?[ly-3,ly-2,ly-1,ly,CUR_YEAR]:[ly-4,ly-3,ly-2,ly-1,ly];}
 
@@ -1336,7 +1349,7 @@ Signification : rawShare = part du coût des ventes liée aux matières premièr
 function aiBadge(k){const s=AIST[k],c=state.cos[k];
   if(s==="loading")return `<span class="pill warn">Analyse IA en cours…</span>`;
   if(s&&s.startsWith("error:"))return `<span class="pill crit">${esc(s.slice(6))}</span>`;
-  if(c.ai)return `<span class="pill good">Analyse IA ${c.ai.year} · ${new Date(c.ai.at).toLocaleDateString("fr-FR")}</span>`;
+  if(c.ai)return `<span class="pill good">${c.ai.src==="prep"?"Analyse préparée FIDEX5":"Analyse IA "+c.ai.year} · ${new Date(c.ai.at).toLocaleDateString("fr-FR")}</span>`;
   return sampler?`<span class="pill na">Analyse IA non lancée</span>`:`<span class="pill na">Analyse IA : sur claude.ai ou avec une clé API (onglet Assistant IA)</span>`;}
 function vigilPoints(k){const c=state.cos[k];
   if(c.ai&&c.ai.points&&c.ai.points.length)return c.ai.points.map(p=>({t:p.titre,d:p.detail,a:p.compte,src:"ia"}));
@@ -1347,9 +1360,9 @@ function renderAIBits(){
   if(v){v.innerHTML=ks.length?`<div class="section-head"><h3>Points de vigilance pour ${CUR_YEAR}</h3></div>${ks.map(k=>{const pts=vigilPoints(k),c=state.cos[k];
     return `<div style="margin-top:10px"><div class="co-head"><b style="color:${col(k)}">${esc(c.name)}</b><span>${aiBadge(k)} ${sampler?`<button class="btn small" data-ai="${k}">${c.ai?"Actualiser l'analyse IA":"Lancer l'analyse IA"}</button>`:""}</span></div>
     <ol class="vlist">${pts.map(p=>`<li><b>${esc(p.t)}</b>${p.a?` <span class="tag">${esc(p.a)}</span>`:""}<div class="small">${esc(p.d)}</div></li>`).join("")}</ol>
-    ${pts[0]&&pts[0].src==="calc"?`<p class="small">Points déduits des scores. ${sampler?"L'analyse IA ajoutera les risques propres à la société.":""}</p>`:`<p class="small">Proposés par l'IA à partir des chiffres et de ses connaissances : à vérifier.</p>`}</div>`;}).join("")}`:"";}
+    ${pts[0]&&pts[0].src==="calc"?`<p class="small">Points déduits des scores. ${sampler?"L'analyse IA ajoutera les risques propres à la société.":""}</p>`:(c.ai&&c.ai.src==="prep"?`<p class="small">Préparés par l'équipe FIDEX5 à partir des rapports annuels et de la presse (novembre 2026) : à vérifier.${sampler?" L'IA peut actualiser cette analyse.":""}</p>`:`<p class="small">Proposés par l'IA à partir des chiffres et de ses connaissances : à vérifier.</p>`)}</div>`;}).join("")}`:"";}
   const s=document.getElementById("ai-scen");
-  if(s){s.innerHTML=ks.length?`<h3>Risques spécifiques aux sociétés (IA)</h3><p class="small">Scénarios ${CUR_YEAR} proposés par l'IA pour chaque société : cliquez pour les appliquer au stress test. Les impacts sont des ordres de grandeur à discuter.</p>${ks.map(k=>{const c=state.cos[k],sc=(c.ai&&c.ai.scenarios)||[];
+  if(s){s.innerHTML=ks.length?`<h3>Risques spécifiques aux sociétés</h3><p class="small">Scénarios ${CUR_YEAR} propres à chaque société (analyse préparée par l'équipe ou proposée par l'IA) : cliquez pour les appliquer au stress test. Les impacts sont des ordres de grandeur à discuter.</p>${ks.map(k=>{const c=state.cos[k],sc=(c.ai&&c.ai.scenarios)||[];
     return `<div style="margin-top:10px"><div class="co-head"><b style="color:${col(k)}">${esc(c.name)}</b><span>${aiBadge(k)} ${sampler?`<button class="btn small" data-ai="${k}">${c.ai?"Actualiser":"Lancer l'analyse IA"}</button>`:""}</span></div>
     ${sc.length?`<div class="scen-list">${sc.map((x,i)=>`<button class="scen" data-scen="${k}|${i}"><b>${esc(x.nom)}</b><span class="small">${esc(x.description)}</span><span class="small">Probabilité ${x.probabilite}/5 · ${Object.entries(x.impacts).filter(([,v])=>v).map(([f,v])=>`${NAMES[f]} ${sign(f,v)}${(SLIDERS.find(s2=>s2[0]===f)||[])[5]||""}`).join(", ")||"impact limité"}</span></button>`).join("")}</div>`:`<p class="small">${AIST[k]==="loading"?"Génération des scénarios…":"Pas encore de scénarios spécifiques."}</p>`}</div>`;}).join("")}`:"";
     s.querySelectorAll("[data-scen]").forEach(b=>b.onclick=()=>{const [k,i]=b.dataset.scen.split("|");const x=state.cos[k].ai.scenarios[+i];scen={...ZERO,...x.impacts};scenName=`${x.nom} (${state.cos[k].name})`;renderSliders();updateStress();document.getElementById("stress-cards").scrollIntoView({behavior:"smooth"});});}
@@ -1366,7 +1379,7 @@ function renderFcCard(){
   if((+c.lastYear||2025)>=CUR_YEAR){box.innerHTML=`<h3>Prévision</h3><p class="small">Le dernier exercice saisi est ${c.lastYear} : aucune prévision n'est nécessaire.</p>`;return;}
   const p=fcParams(k),pr=proj(k);
   box.innerHTML=`<div class="section-head"><h3>Prévision ${CUR_YEAR} de ${esc(c.name)}</h3><label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fc-toggle2" ${state.fcOn!==false?"checked":""}> Inclure la prévision dans les analyses</label></div>
-   <p class="small">Méthode : ${p.src==="ia"?"proposée par l'IA":p.src==="user"?"saisie par l'équipe":"tendance des derniers exercices"}${p.gap>1?` · projection sur ${p.gap} ans`:""}. Les postes du bilan suivent l'activité, les capitaux propres intègrent le résultat prévu (sans dividende).</p>
+   <p class="small">Méthode : ${p.src==="ia"?"proposée par l'IA":p.src==="prep"?"préparée par l'équipe FIDEX5 (démonstration)":p.src==="user"?"saisie par l'équipe":"tendance des derniers exercices"}${p.gap>1?` · projection sur ${p.gap} ans`:""}. Les postes du bilan suivent l'activité, les capitaux propres intègrent le résultat prévu (sans dividende).</p>
    ${p.why?interp(esc(p.why)):""}
    <div class="fields" style="margin-top:10px"><label for="fc-g">Croissance annuelle du CA (%)<input type="text" id="fc-g" inputmode="decimal" value="${fmt(p.g*100,1)}"></label><label for="fc-m">Marge d'exploitation ${CUR_YEAR} (%)<input type="text" id="fc-m" inputmode="decimal" value="${fmt(p.m*100,1)}"></label></div>
    <div class="actions" style="margin-top:8px"><button class="btn small" id="fc-reset">Revenir à la tendance</button><span class="small">CA prévu : <b>${fmt(pr.ca)}</b> ${esc(c.cur)} · EBIT : <b>${fmt(pr.ebit)}</b> · résultat net : <b>${fmt(pr.net)}</b></span></div>`;
@@ -1376,9 +1389,440 @@ function renderFcCard(){
   document.getElementById("fc-toggle2").onchange=e=>{state.fcOn=e.target.checked;save();refreshAll();};
 }
 
+/* ===================================================================
+   Travaux d'audit : test des écritures (ISA 240), revue analytique (ISA 520),
+   échantillonnage (unités monétaires), continuité d'exploitation (ISA 570),
+   CrashTest Monte-Carlo
+   =================================================================== */
+const JE={};
+let DMEMO=null;
+const RNG=seed=>{let a=seed>>>0;return()=>{a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};};
+const gauss=r=>{let u=0,v=0;while(!u)u=r();while(!v)v=r();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);};
+const fmtD=d=>d?d.toLocaleDateString("fr-FR"):"n.d.";
+const isMaroc=k=>/maroc|morocco/i.test(state.cos[k].country||"")||state.cos[k].cur==="MDH";
+function wkCo(id){if(!keys().includes(ui[id]))ui[id]=keys()[0];return ui[id];}
+function coSeg(id,cb){const k=wkCo(id);return keys().length>1?`<div class="seg" data-seg="${id}" role="group" aria-label="Société">${keys().map(x=>`<button aria-pressed="${x===k}" data-k="${x}">${esc(state.cos[x].name)}</button>`).join("")}</div>`:"";}
+function bindSeg(box,id,cb){box.querySelectorAll(`[data-seg="${id}"] button`).forEach(b=>b.onclick=()=>{ui[id]=b.dataset.k;cb();});}
+
+/* ---------- 1. Écritures : import ---------- */
+const jeNorm=s=>String(s==null?"":s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]/g,"");
+function jeDate(v){
+  if(v instanceof Date)return isNaN(v)?null:new Date(v.getFullYear(),v.getMonth(),v.getDate());
+  if(typeof v==="number"&&v>20000&&v<80000){const d=new Date(Math.round((v-25569)*864e5));return new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());}
+  const s=String(v==null?"":v).trim();let m;
+  if((m=/^(\d{4})(\d{2})(\d{2})$/.exec(s)))return new Date(+m[1],m[2]-1,+m[3]);
+  if((m=/^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s)))return new Date(+m[1],m[2]-1,+m[3]);
+  if((m=/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/.exec(s))){let y=+m[3];if(y<100)y+=2000;return new Date(y,m[2]-1,+m[1]);}
+  return null;}
+const JE_COLS=[
+ ["date",/^(ecrituredate|datecomptable|dateecriture|date|dateoperation|datepiece|datemouvement)$/,s=>/date/.test(s)&&!/valid|saisie|creation|echeance|lettr/.test(s)],
+ ["acc",/^(comptenum|compte|numcompte|numerodecompte|account|comptegeneral|nocompte)$/,s=>/compte|account/.test(s)&&!/lib|aux|intitule|nom/.test(s)],
+ ["accLib",/^(comptelib|intitulecompte|libellecompte|nomcompte)$/,s=>/(compte|account)/.test(s)&&/lib|intitule|nom/.test(s)&&!/aux/.test(s)],
+ ["lib",/^(ecriturelib|libelle|label|description|designation|libelleecriture)$/,s=>/lib|label|descr|designation/.test(s)&&!/compte|journal/.test(s)],
+ ["debit",/^(debit|montantdebit|debitmontant|debits)$/,s=>/debit/.test(s)],
+ ["credit",/^(credit|montantcredit|credits)$/,s=>/credit/.test(s)],
+ ["amt",/^(montant|amount|mnt|valeur)$/,s=>/montant|amount/.test(s)&&!/devise/.test(s)],
+ ["user",/^(utilisateur|user|saisipar|auteur|createdby|operateur)$/,s=>/util|user|saisi|auteur|operat/.test(s)],
+ ["piece",/^(ecriturenum|piece|pieceref|numpiece|numero|ref|reference)$/,s=>/piece|ecriturenum/.test(s)],
+ ["jr",/^(journalcode|journal|codejournal|jnl)$/,s=>/journal/.test(s)&&!/lib/.test(s)]];
+function jeMap(header){const h=header.map(jeNorm),map={},used=new Set();
+  for(const pass of [1,2])for(const [f,ex,fz] of JE_COLS){if(map[f]!=null)continue;const i=h.findIndex((s,j)=>!used.has(j)&&s&&(pass===1?ex.test(s):fz(s)));if(i>=0){map[f]=i;used.add(i);}}
+  return map;}
+function jeFromRows(rows){
+  let hi=-1,map=null;
+  for(let i=0;i<Math.min(rows.length,15);i++){const m=jeMap(rows[i]||[]);const ok=m.acc!=null&&(m.debit!=null||m.credit!=null||m.amt!=null);if(ok){hi=i;map=m;break;}}
+  if(hi<0)throw new Error("Colonnes non reconnues : il faut au moins une colonne « compte » et des colonnes « débit »/« crédit » ou « montant ».");
+  const num=v=>typeof v==="number"?v:parseNum(v);const out=[];
+  for(const r of rows.slice(hi+1)){if(!r||!r.length)continue;const acc=String(r[map.acc]==null?"":r[map.acc]).trim();if(!acc)continue;
+    const de=map.debit!=null?num(r[map.debit]):NaN,cr=map.credit!=null?num(r[map.credit]):NaN,am=map.amt!=null?num(r[map.amt]):NaN;
+    let amt=isFinite(de)&&de!==0?Math.abs(de):isFinite(cr)&&cr!==0?Math.abs(cr):isFinite(am)?Math.abs(am):NaN;
+    if(!isFinite(amt)||amt===0)continue;
+    out.push({d:map.date!=null?jeDate(r[map.date]):null,acc,accLib:map.accLib!=null?String(r[map.accLib]||""):"",lib:map.lib!=null?String(r[map.lib]||"").trim():"",amt,
+      side:isFinite(de)&&de!==0?"D":isFinite(cr)&&cr!==0?"C":"",user:map.user!=null?String(r[map.user]||"").trim():"",piece:map.piece!=null?String(r[map.piece]||""):"",jr:map.jr!=null?String(r[map.jr]||""):""});}
+  if(!out.length)throw new Error("Aucune écriture lisible dans le fichier.");
+  return{rows:out,cols:Object.keys(map)};}
+function jeSplitText(t){const lines=t.replace(/^﻿/,"").split(/\r?\n/).filter(l=>l.trim());const first=lines[0]||"";
+  const dl=["\t","|",";",","].map(d=>[d,first.split(d).length]).sort((a,b)=>b[1]-a[1])[0][0];
+  return lines.map(l=>l.split(dl).map(c=>c.replace(/^"|"$/g,"").trim()));}
+async function jeImport(k,file){
+  let rows;
+  if(/\.(xlsx|xls|xlsm)$/i.test(file.name)){if(!window.XLSX)throw new Error("La lecture des fichiers Excel n'est pas disponible ici : exportez le grand livre en CSV.");
+    const wb=XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:true});rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:""});}
+  else rows=jeSplitText(await file.text());
+  const r=jeFromRows(rows);JE[k]={name:file.name,unit:1,rows:r.rows,cols:r.cols,demo:false};}
+
+/* ---------- 1. Écritures : grand livre fictif de démonstration ---------- */
+function jeDemo(k){
+  const c=state.cos[k],b=yr(RD(k),4),y=+c.lastYear||2025,r=RNG(20251231+k.length*97);
+  const ca=(isFinite(b.ca)&&b.ca>0?b.ca:500)*1e6;
+  const A=isMaroc(k)?[["7111","Ventes de marchandises",.2],["3421","Clients",.2],["6111","Achats de marchandises",.14],["4411","Fournisseurs",.14],["6171","Rémunérations du personnel",.08],["5141","Banques",.12],["6136","Honoraires",.04],["6193","Dotations d'exploitation aux amortissements",.03],["3111","Marchandises",.05]]
+                   :[["701","Ventes de produits finis",.2],["411","Clients",.2],["601","Achats de matières premières",.14],["401","Fournisseurs",.14],["641","Rémunérations du personnel",.08],["512","Banques",.12],["622","Honoraires",.04],["681","Dotations aux amortissements",.03],["31","Matières premières",.05]];
+  const LIB={0:"Facture client",1:"Facture client",2:"Facture fournisseur",3:"Facture fournisseur",4:"Paie du mois",5:"Règlement",6:"Honoraires",7:"Dotation mensuelle",8:"Entrée en stock"};
+  const users=["compta1","compta1","compta2","compta2","compta3","tresorerie"];
+  const pick=()=>{let x=r(),s=0;for(let i=0;i<A.length;i++){s+=A[i][2];if(x<=s)return i;}return 0;};
+  const bday=()=>{for(;;){const d=new Date(y,0,1+Math.floor(r()*365));const w=d.getDay();if(w!==0&&w!==6)return d;}};
+  const avg=ca/2500,mu=Math.log(avg)-0.85,rows=[];let pc=1;
+  const add=(i,d,amt,lib,user,acc,accLib)=>rows.push({d,acc:acc||A[i][0],accLib:accLib||A[i][1],lib,amt:Math.round(amt*100)/100,side:"",user,piece:"P"+String(pc++).padStart(5,"0"),jr:"OD"});
+  for(let n=0;n<1600;n++){const i=pick();add(i,bday(),Math.exp(mu+1.3*gauss(r)),LIB[i]+" n° "+Math.floor(1000+r()*9000),users[Math.floor(r()*users.length)]);}
+  const mt=materiality(k),sp=mt.neg?ca*0.002:mt.sp*1e6;
+  for(let n=0;n<10;n++){const d=new Date(y,0,1+Math.floor(r()*52)*7+5+(n%2));add(pick(),d,Math.exp(mu+1.2*gauss(r)),"Écriture manuelle","compta2");}
+  [50000,100000,250000,500000,1000000,120000,300000,75000,2000000,40000,150000,600000].forEach(v=>add(pick(),bday(),v,"Facture","compta1"));
+  for(let n=0;n<6;n++)add(0,new Date(y,11,29+(n%3)),sp*(1.1+r()),"Régularisation chiffre d'affaires fin d'exercice","compta3");
+  add(1,new Date(y+1,0,3),sp*1.3,"Annulation facture décembre","compta3");
+  ["admin","admin","dg","admin"].forEach((u,j)=>add(j%2?2:5,bday(),Math.exp(mu+1.5+gauss(r)),j===3?"Divers":"Correction","admin"===u?"admin":u));
+  add(0,bday(),avg*3,"Ajustement",users[0],isMaroc(k)?"6588":"658",isMaroc(k)?"Autres charges non courantes":"Charges diverses de gestion");
+  add(0,bday(),avg*2,"",users[1],isMaroc(k)?"3497":"471",isMaroc(k)?"Comptes transitoires ou d'attente":"Compte d'attente");
+  for(let n=0;n<5;n++){const s=rows[Math.floor(r()*1500)];rows.push({...s,piece:"P"+String(pc++).padStart(5,"0")});}
+  rows.sort((a,b)=>a.d-b.d);
+  JE[k]={name:`Grand livre fictif ${y}`,unit:1,rows,cols:["date","acc","accLib","lib","amt","user","piece","jr"],demo:true};}
+
+/* ---------- 1. Écritures : tests ---------- */
+const JE_T=[["we","Week-end"],["round","Montant rond"],["close","Proche de la clôture"],["big","Supérieur au seuil de planification"],["rare","Compte rarement utilisé"],["user","Utilisateur inhabituel"],["lib","Libellé vide ou sensible"],["dup","Doublon possible"]];
+const JE_TL={we:"Écritures passées un samedi ou un dimanche",round:"Montants ronds (multiples de 1 000, au moins 10 000)",close:"Écritures 5 jours avant ou après la clôture, au-dessus du seuil d'insignifiance",big:"Montants supérieurs au seuil de planification",rare:"Comptes mouvementés 3 fois ou moins",user:"Utilisateurs rares (moins de 1 % des écritures)",lib:"Libellés vides ou sensibles (régularisation, correction, divers, annulation…)",dup:"Doublons possibles (même date, compte et montant)"};
+function jeTests(k){
+  const J=JE[k];if(!J)return null;const rows=J.rows,u=J.unit||1,mt=materiality(k);
+  const sp=mt.neg?Infinity:mt.sp*1e6/u,si=mt.neg?Infinity:mt.si*1e6/u;
+  const hasD=rows.some(r=>r.d),hasU=rows.some(r=>r.user);
+  const yc={};rows.forEach(r=>{if(r.d)yc[r.d.getFullYear()]=(yc[r.d.getFullYear()]||0)+1;});
+  const fy=+Object.keys(yc).sort((a,b)=>yc[b]-yc[a])[0]||(+state.cos[k].lastYear||2025),close=new Date(fy,11,31);
+  const ac={},uc={},dc={};const key=r=>`${r.d?r.d.getTime():""}|${r.acc}|${r.amt}`;
+  rows.forEach(r=>{ac[r.acc]=(ac[r.acc]||0)+1;if(r.user)uc[r.user]=(uc[r.user]||0)+1;dc[key(r)]=(dc[key(r)]||0)+1;});
+  const uMin=Math.max(2,rows.length*0.01);
+  const F={we:r=>hasD&&r.d&&(r.d.getDay()===0||r.d.getDay()===6),round:r=>{const v=r.amt*u;return v>=10000&&Math.abs(v%1000)<1e-6;},close:r=>hasD&&r.d&&Math.abs((r.d-close)/864e5)<=5&&r.amt>=si,
+    big:r=>r.amt>=sp,rare:r=>ac[r.acc]<=3,user:r=>hasU&&r.user&&uc[r.user]<uMin,lib:r=>!r.lib||/r[ée]gul|correct|divers|annul|ajust|extourne|provisoire|attente/i.test(r.lib),dup:r=>dc[key(r)]>1};
+  const cnt={};JE_T.forEach(([id])=>cnt[id]=0);
+  const fl=rows.map(r=>{const f=JE_T.map(([id])=>id).filter(id=>F[id](r));f.forEach(id=>cnt[id]++);return{r,f,s:f.length+(f.includes("big")?1:0)+(f.includes("close")?1:0)};});
+  const flagged=fl.filter(x=>x.f.length).sort((a,b)=>b.s-a.s||b.r.amt-a.r.amt);
+  const c9=Array(9).fill(0);let n=0;rows.forEach(r=>{let a=r.amt*u;if(a<10)return;while(a>=10)a/=10;c9[Math.floor(a)-1]++;n++;});
+  const obs=c9.map(c=>n?c/n:0),mad=obs.reduce((s,o,i)=>s+Math.abs(o-BEN[i]),0)/9;
+  return{n:rows.length,cnt,flagged,prio:flagged.filter(x=>x.f.length>=2).length,hasD,hasU,fy,sp,si,ben:{obs,mad,n},na:{we:!hasD,close:!hasD,user:!hasU}};}
+function benMiniSvg(obs,c){const W=300,H=130,x0=22,bw=(W-x0-6)/9,ym=.4,sy=v=>H-18-Math.min(v,ym)/ym*(H-30);
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:460px" role="img" aria-label="Benford des écritures">`;
+  [0,.1,.2,.3,.4].forEach(g=>{s+=`<line x1="${x0}" x2="${W-4}" y1="${sy(g)}" y2="${sy(g)}" stroke="var(--line)"/><text x="${x0-4}" y="${sy(g)+3}" font-size="9" text-anchor="end">${g*100}</text>`;});
+  obs.forEach((o,i)=>{s+=`<rect x="${x0+i*bw+3}" y="${sy(o)}" width="${bw-6}" height="${sy(0)-sy(o)}" fill="${c}" fill-opacity=".75" rx="2"/><text x="${x0+i*bw+bw/2}" y="${H-5}" font-size="10" text-anchor="middle">${i+1}</text>`;});
+  s+=`<polyline points="${BEN.map((e,i)=>`${x0+i*bw+bw/2},${sy(e)}`).join(" ")}" fill="none" stroke="var(--ink)" stroke-width="1.5"/></svg>`;return s;}
+function renderJE(){
+  const box=document.getElementById("je-card");if(!box||!keys().length)return;
+  const k=wkCo("jeCo"),J=JE[k],T=jeTests(k),cu=state.cos[k].cur;
+  let h=`<div class="section-head"><h3>Test des écritures comptables (ISA 240)</h3>${coSeg("jeCo")}</div>
+  <p class="small">Importez le grand livre ou le fichier des écritures comptables (FEC, Excel ou CSV avec au moins : date, compte, libellé, débit, crédit ; idéalement l'utilisateur). Huit tests repèrent les écritures à examiner, et la loi de Benford s'applique aux montants réels. Les écritures restent dans ce navigateur et ne sont pas enregistrées.</p>
+  <div class="actions" style="margin-top:8px"><label class="btn primary" style="cursor:pointer">Importer le grand livre<input type="file" id="je-file" accept=".xlsx,.xls,.csv,.txt" hidden></label>
+  <button class="btn" id="je-demo">Générer un grand livre fictif (démonstration)</button>
+  ${J?`<label class="small" style="display:inline-flex;gap:6px;align-items:center">Montants du fichier en<select id="je-unit"><option value="1">unités</option><option value="1000">milliers</option><option value="1000000">millions</option></select></label><button class="btn small" id="je-clear">Retirer</button>`:""}
+  <span class="msg" id="je-msg" role="status"></span></div>`;
+  if(J&&T){
+    const pr=T.flagged.length/T.n;
+    h+=`${J.demo?`<p class="msg err" style="margin-top:8px">Grand livre fictif généré pour la démonstration (anomalies volontairement insérées) : ne jamais l'utiliser comme élément probant.</p>`:`<p class="small" style="margin-top:8px">Fichier : <b>${esc(J.name)}</b></p>`}
+    <div class="mat-kpis"><div class="box"><div class="lab">Écritures analysées</div><div class="val">${fmt(T.n)}</div></div>
+      <div class="box"><div class="lab">Écritures signalées</div><div class="val">${fmt(T.flagged.length)}</div><div class="small">${pct(pr,1)}</div></div>
+      <div class="box"><div class="lab">À examiner en priorité</div><div class="val">${fmt(T.prio)}</div><div class="small">au moins 2 tests différents</div></div>
+      <div class="box"><div class="lab">Benford (écart moyen)</div><div class="val">${fmt(T.ben.mad,3)}</div>${pill(benZone(T.ben.mad),benZone(T.ben.mad)==="good"?"Conforme":benZone(T.ben.mad)==="warn"?"À surveiller":"Non conforme")}</div></div>
+    <div class="grid2" style="margin-top:12px"><div><table><thead><tr><th>Test</th><th class="n">Écritures</th><th class="n">%</th></tr></thead><tbody>
+      ${JE_T.map(([id])=>`<tr><td>${JE_TL[id]}</td><td class="n">${T.na[id]?"n.d.":fmt(T.cnt[id])}</td><td class="n">${T.na[id]?"":pct(T.cnt[id]/T.n,1)}</td></tr>`).join("")}</tbody></table>
+      ${T.na.user||T.na.we?`<p class="small">n.d. : colonne absente du fichier (${[T.na.we?"date":"",T.na.user?"utilisateur":""].filter(Boolean).join(", ")}).</p>`:""}</div>
+      <div><p class="small"><b>Premier chiffre des montants</b> (${fmt(T.ben.n)} montants ≥ 10). Barres : observé ; trait : loi de Benford.</p>${benMiniSvg(T.ben.obs,col(k))}</div></div>
+    <h3 style="margin-top:14px">Écritures à examiner en priorité</h3>
+    <div class="scroll"><table><thead><tr><th class="n">Score</th><th>Date</th><th>Compte</th><th>Libellé</th><th class="n">Montant</th><th>Utilisateur</th><th>Tests déclenchés</th></tr></thead><tbody>
+    ${T.flagged.slice(0,25).map(x=>`<tr><td class="n"><b>${x.s}</b></td><td>${fmtD(x.r.d)}</td><td>${esc(x.r.acc)}${x.r.accLib?`<div class="small">${esc(x.r.accLib)}</div>`:""}</td><td>${esc(x.r.lib||"(vide)")}</td><td class="n">${fmt(x.r.amt,0)}</td><td>${esc(x.r.user||"")}</td><td>${x.f.map(id=>`<span class="pill ${id==="big"||id==="close"?"crit":"warn"}" style="margin:1px">${JE_T.find(t=>t[0]===id)[1]}</span>`).join(" ")}</td></tr>`).join("")}</tbody></table></div>
+    ${interp(jeInterp(k,T))}
+    <div class="exp"><button class="btn small" data-csv="je">Écritures signalées en CSV</button></div>`;
+  }
+  box.innerHTML=h;
+  bindSeg(box,"jeCo",renderJE);
+  const msg=(t,e)=>{const m=document.getElementById("je-msg");m.className="msg"+(e?" err":"");m.textContent=t;};
+  document.getElementById("je-file").onchange=async e=>{const f=e.target.files[0];if(!f)return;msg("Lecture du fichier…");try{await jeImport(k,f);renderJE();renderSample();}catch(er){msg(er.message||"Fichier illisible.",true);}};
+  document.getElementById("je-demo").onclick=()=>{jeDemo(k);renderJE();renderSample();};
+  const us=document.getElementById("je-unit");if(us){us.value=String(J.unit||1);us.onchange=()=>{J.unit=+us.value;renderJE();renderSample();};}
+  const cl=document.getElementById("je-clear");if(cl)cl.onclick=()=>{delete JE[k];renderJE();renderSample();};
+}
+function jeInterp(k,T){const top=JE_T.filter(([id])=>!T.na[id]).sort((a,b)=>T.cnt[b[0]]-T.cnt[a[0]]).slice(0,2).map(([id])=>JE_TL[id].toLowerCase());
+  return `${fmt(T.prio)} écriture(s) cumulent au moins deux tests différents sur ${fmt(T.n)}. Les tests les plus fréquents portent sur : ${top.join(" ; ")}. ${T.cnt.close?`Les ${fmt(T.cnt.close)} écritures proches de la clôture sont prioritaires (risque de séparation des exercices et de gestion du résultat). `:""}${benZone(T.ben.mad)!=="good"?"La distribution des montants s'écarte de la loi de Benford : rechercher les comptes ou utilisateurs qui expliquent l'écart. ":"Les montants suivent la loi de Benford. "}Pour chaque écriture retenue : obtenir la pièce justificative, l'autorisation et l'explication de la direction (ISA 240.32).`;}
+
+/* ---------- 2. Revue analytique (ISA 520) ---------- */
+function raRows(k){const d=RD(k),mt=materiality(k),sp=mt.neg?NaN:mt.sp;const P=FIELDS.map(([f,l])=>{const n1=d[f][3],n=d[f][4];const a=+n1,b=+n;const ok=n1!=null&&n!=null&&n1!==""&&n!==""&&isFinite(a)&&isFinite(b);
+  const dv=ok?b-a:NaN,dp=ok&&a!==0?dv/Math.abs(a):NaN;const sig=ok&&(isFinite(sp)?Math.abs(dv)>=sp&&(!isFinite(dp)||Math.abs(dp)>=0.1):Math.abs(dp)>=0.2);return{f,l,a,b,dv,dp,sig};});
+  return{P,sp};}
+function renderRA520(){
+  const box=document.getElementById("ra520-card");if(!box||!keys().length)return;const k=ui.missionCo,co=state.cos[k],m=co.mission;m.raExp=m.raExp||{};
+  const {P,sp}=raRows(k),RY=realYears(k),sig=P.filter(x=>x.sig),done=sig.filter(x=>(m.raExp[x.f]||"").trim()).length,PJ=fcActive(k)?proj(k):null;
+  box.innerHTML=`<div class="section-head"><h3>Revue analytique (ISA 520) : ${esc(co.name)}</h3><span class="small">${done}/${sig.length} variation(s) significative(s) expliquée(s)</span></div>
+  <p class="small">Variations entre ${RY[3]} et ${RY[4]}. Une variation est significative si elle dépasse le seuil de planification (${isFinite(sp)?fmt(sp,2)+" "+esc(co.cur):"non calculable"}) et 10 %. Notez l'explication obtenue de la direction, puis corroborez-la par des pièces.${PJ?` La colonne ${CUR_YEAR} (p) sert d'attente pour la revue analytique de fin de mission.`:""}</p>
+  <div class="scroll"><table><thead><tr><th>Poste (${esc(co.cur)})</th><th class="n">${RY[3]}</th><th class="n">${RY[4]}</th><th class="n">Variation</th><th class="n">%</th>${PJ?`<th class="n">${CUR_YEAR} (p)</th>`:""}<th>Explication obtenue</th></tr></thead><tbody>
+  ${P.map(x=>`<tr${x.sig?' class="row-open"':""}><td>${x.sig?"● ":""}${x.l}</td><td class="n">${fmt(x.a,1)}</td><td class="n">${fmt(x.b,1)}</td><td class="n">${fmt(x.dv,1)}</td><td class="n">${pct(x.dp,0)}</td>${PJ?`<td class="fc">${fmt(PJ[x.f],1)}</td>`:""}<td>${x.sig?`<input type="text" data-raexp="${x.f}" value="${esc(m.raExp[x.f]||"")}" placeholder="À expliquer" style="width:100%;min-width:200px">`:`<span class="small">Non significative</span>`}</td></tr>`).join("")}</tbody></table></div>
+  <div class="actions" style="margin-top:8px">${sampler?`<button class="btn small" id="ra-ai">Proposer des explications à vérifier (IA)</button>`:""}<span class="msg" id="ra-msg" role="status"></span><button class="btn small" data-csv="ra520">Données CSV</button></div>
+  ${interp(sig.length?`${sig.length} variation(s) significative(s) : ${sig.slice(0,4).map(x=>`${x.l.toLowerCase()} (${pct(x.dp,0)})`).join(", ")}${sig.length>4?", etc":""}. ${done<sig.length?`${sig.length-done} reste(nt) à expliquer : une variation inexpliquée ou incohérente avec la connaissance de l'entité impose des tests de détail supplémentaires (ISA 520.7).`:"Toutes ont une explication : vérifiez qu'elle est corroborée par des éléments probants."}`:"Aucune variation significative entre les deux derniers exercices : les procédures analytiques confortent la stabilité des comptes.")}`;
+  box.querySelectorAll("[data-raexp]").forEach(i=>i.onchange=()=>{m.raExp[i.dataset.raexp]=i.value;saveCo(k);renderRA520();});
+  const b=document.getElementById("ra-ai");if(b)b.onclick=async()=>{const msg=document.getElementById("ra-msg");if(!sig.length){msg.textContent="Aucune variation à expliquer.";return;}
+    b.disabled=true;msg.className="msg";msg.textContent="L'IA prépare des pistes d'explication…";
+    try{const r=await sampler.json(`Tu aides des auditeurs (Master CCA). Société « ${co.name} » (${co.country||""}, secteur ${co.sector||"non précisé"}), montants en ${co.cur}. Pour chaque variation significative entre ${RY[3]} et ${RY[4]}, propose en une phrase (25 mots maximum) l'explication économique la plus plausible à faire confirmer par la direction, en t'appuyant sur les autres postes et sur tes connaissances de la société et du secteur. Ne présente pas d'hypothèse comme un fait.
+Variations : ${JSON.stringify(sig.map(x=>({poste:x.f,libelle:x.l,avant:x.a,apres:x.b,variation_pct:Math.round(x.dp*100)})))}
+Autres données : ${JSON.stringify(Object.fromEntries(P.map(x=>[x.f,[x.a,x.b]])))}
+Réponds uniquement avec un objet JSON : {"explications": {"<poste>": "<phrase>"}}`,{modelTier:"default"});
+      const e=(r&&r.explications)||{};let n=0;sig.forEach(x=>{if(!(m.raExp[x.f]||"").trim()&&e[x.f]){m.raExp[x.f]="[IA, à confirmer] "+String(e[x.f]).slice(0,300);n++;}});saveCo(k);renderRA520();
+      const m2=document.getElementById("ra-msg");if(m2)m2.textContent=`${n} piste(s) ajoutée(s) : à confirmer auprès de la direction.`;}
+    catch(er){msg.className="msg err";msg.textContent=er&&er.api?er.message:"L'IA n'a pas pu répondre : réessayez.";b.disabled=false;}};
+}
+
+/* ---------- 3. Échantillonnage par unités monétaires ---------- */
+const CONF={90:[2.31,1.5],95:[3.0,1.6],99:[4.61,1.9]};
+const SAMP_POP=[["rec","Créances clients"],["inv","Stocks"],["ca","Chiffre d'affaires"],["cogs","Coût des ventes"],["sga","Frais commerciaux et généraux"],["ppe","Immobilisations corporelles"]];
+function sampCalc(k){
+  const co=state.cos[k],m=co.mission,mt=materiality(k);m.samp=m.samp||{};const s=m.samp;
+  if(!s.pop)s.pop=JE[k]?"je":"rec";if(s.pop==="je"&&!JE[k])s.pop="rec";if(!s.conf)s.conf=95;if(s.prefix==null)s.prefix=isMaroc(k)?"342":"411";if(!s.seed)s.seed=12345;
+  const tm=isFinite(s.tm)&&s.tm>0?s.tm:(mt.neg?NaN:mt.sp),ee=isFinite(s.ee)&&s.ee>=0?s.ee:0;
+  let bv,items=null;
+  if(s.pop==="je"){const J=JE[k],u=J.unit||1;items=J.rows.filter(r=>String(r.acc).startsWith(String(s.prefix).trim()));bv=items.reduce((a,r)=>a+r.amt,0)*u/1e6;}
+  else{const v=yr(D(k),4)[s.pop];bv=isFinite(v)?Math.abs(v):NaN;}
+  const [rf,ef]=CONF[s.conf];const den=tm-ee*ef;
+  let n=isFinite(bv)&&isFinite(tm)&&den>0?Math.ceil(bv*rf/den):NaN;if(items&&isFinite(n))n=Math.min(n,items.length);
+  const J_=isFinite(n)&&n>0?bv/n:NaN;let sel=null;
+  if(items&&isFinite(J_)&&items.length){const u=JE[k].unit||1,r=RNG(s.seed),start=r()*J_;let cum=0,nx=start,i=0;sel=[];
+    for(const it of items){const a=it.amt*u/1e6;const lo=cum;cum+=a;while(nx<cum&&i<n){if(!sel.length||sel[sel.length-1].it!==it)sel.push({it,pt:nx,big:a>=J_});nx+=J_;i++;}}}
+  return{s,tm,ee,bv,n,J:J_,rf,ef,den,items,sel};}
+function renderSample(){
+  const box=document.getElementById("sample-card");if(!box||!keys().length)return;const k=ui.missionCo,co=state.cos[k],S=sampCalc(k),s=S.s,cu=esc(co.cur);
+  box.innerHTML=`<div class="section-head"><h3>Échantillonnage par unités monétaires : ${esc(co.name)}</h3><span class="formula">n = valeur × facteur de confiance ÷ (erreur tolérable − erreur attendue × facteur d'expansion)</span></div>
+  <p class="small">Chaque unité monétaire a la même chance d'être tirée : les montants élevés sont sélectionnés en priorité. Montants en millions (${cu}).</p>
+  <div class="fields" style="margin-top:8px">
+    <label>Population<select id="sp-pop">${JE[k]?`<option value="je">Écritures du grand livre importé</option>`:""}${SAMP_POP.map(([f,l])=>`<option value="${f}">${l} (${YL(4)})</option>`).join("")}</select></label>
+    ${s.pop==="je"?`<label>Comptes commençant par<input type="text" id="sp-pre" value="${esc(s.prefix)}"></label>`:""}
+    <label>Niveau de confiance<select id="sp-conf"><option value="90">90 %</option><option value="95">95 %</option><option value="99">99 %</option></select></label>
+    <label>Erreur tolérable (M)<input type="text" id="sp-tm" inputmode="decimal" value="${fmt(S.tm,2)}"></label>
+    <label>Erreur attendue (M)<input type="text" id="sp-ee" inputmode="decimal" value="${fmt(S.ee,2)}"></label>
+  </div>
+  <div class="mat-kpis"><div class="box"><div class="lab">Valeur de la population</div><div class="val">${fmt(S.bv,1)}</div><div class="small">${S.items?fmt(S.items.length)+" écritures":"M "+cu}</div></div>
+    <div class="box"><div class="lab">Taille de l'échantillon</div><div class="val">${isFinite(S.n)?fmt(S.n):"n.d."}</div><div class="small">confiance ${s.conf} % (facteur ${fmt(S.rf,2)})</div></div>
+    <div class="box"><div class="lab">Intervalle de sélection</div><div class="val">${fmt(S.J,2)}</div><div class="small">M ${cu}</div></div>
+    ${S.sel?`<div class="box"><div class="lab">Éléments ≥ intervalle</div><div class="val">${fmt(S.sel.filter(x=>x.big).length)}</div><div class="small">tirés d'office</div></div>`:""}</div>
+  ${S.den<=0?`<p class="msg err">L'erreur attendue est trop élevée par rapport à l'erreur tolérable : l'échantillonnage n'est pas adapté, il faut un contrôle exhaustif.</p>`:""}
+  ${S.sel?`<div class="actions" style="margin-top:10px"><button class="btn small" id="sp-new">Nouveau tirage</button><button class="btn small" data-csv="sample">Échantillon en CSV</button></div>
+    <div class="scroll" style="margin-top:8px;max-height:320px;overflow:auto"><table><thead><tr><th class="n">N°</th><th>Date</th><th>Compte</th><th>Libellé</th><th class="n">Montant</th><th class="n">Point tiré (M)</th></tr></thead><tbody>
+    ${S.sel.map((x,i)=>`<tr><td class="n">${i+1}</td><td>${fmtD(x.it.d)}</td><td>${esc(x.it.acc)}</td><td>${esc(x.it.lib||"")}</td><td class="n">${fmt(x.it.amt,0)}${x.big?' <span class="pill crit">≥ intervalle</span>':""}</td><td class="n">${fmt(x.pt,3)}</td></tr>`).join("")}</tbody></table></div>`
+  :`<p class="small" style="margin-top:8px">${s.pop==="je"?"Aucune écriture ne correspond à ce préfixe de compte.":"Pour tirer les éléments à contrôler, importez le grand livre dans Fraud Radar (ou générez le grand livre fictif), puis choisissez « Écritures du grand livre ». Sinon, appliquez l'intervalle à la balance détaillée fournie par le client."}</p>`}
+  ${interp(isFinite(S.n)?`Pour couvrir ${fmt(S.bv,1)} M ${cu} avec une erreur tolérable de ${fmt(S.tm,2)} M, il faut contrôler ${fmt(S.n)} élément(s), soit un tirage tous les ${fmt(S.J,2)} M. Si les erreurs trouvées, extrapolées, dépassent l'erreur tolérable, le poste ne peut pas être accepté sans travaux supplémentaires.`:"Paramètres incomplets : renseignez l'erreur tolérable (par défaut le seuil de planification).")}`;
+  const sv=()=>{saveCo(k);renderSample();};
+  const pop=document.getElementById("sp-pop");pop.value=s.pop;pop.onchange=()=>{s.pop=pop.value;sv();};
+  const cf=document.getElementById("sp-conf");cf.value=String(s.conf);cf.onchange=()=>{s.conf=+cf.value;sv();};
+  document.getElementById("sp-tm").onchange=e=>{const v=parseNum(e.target.value);s.tm=isFinite(v)&&v>0?v:null;sv();};
+  document.getElementById("sp-ee").onchange=e=>{const v=parseNum(e.target.value);s.ee=isFinite(v)&&v>=0?v:0;sv();};
+  const pre=document.getElementById("sp-pre");if(pre)pre.onchange=()=>{s.prefix=pre.value.trim();sv();};
+  const nw=document.getElementById("sp-new");if(nw)nw.onclick=()=>{s.seed=Math.floor(Math.random()*1e9)+1;sv();};
+}
+
+/* ---------- 5. CrashTest Monte-Carlo ---------- */
+const MC={};
+const MC_DIST=[["oil","Pétrole / matière première","normale, moyenne 0 %, écart-type 25 %"],["fx","Dollar","normale, 0 %, écart-type 8 %"],["demand","Demande","normale, baisse moyenne 2 %, écart-type 6 %"],["log","Fret maritime","normale, +3 %, écart-type 8 % (pas de baisse)"],["carbon","Taxe carbone","normale, 10 €/t, écart-type 25 (pas de baisse)"],["rate","Taux d'intérêt","normale, +25 pb, écart-type 75 pb"],["cost","Autres coûts","normale, +3 %, écart-type 4 %"],["oneoff","Charge exceptionnelle","10 % de chances, 1 à 5 % du CA"]];
+function mcDraw(r,k,useAI){const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const s={oil:cl(25*gauss(r),-40,80),fx:cl(8*gauss(r),-20,30),demand:cl(2+6*gauss(r),-15,40),log:cl(3+8*gauss(r),0,30),carbon:cl(10+25*gauss(r),0,200),rate:cl(25+75*gauss(r),-100,400),cost:cl(3+4*gauss(r),-5,30),oneoff:r()<0.1?1+4*r():0};
+  const sc=useAI&&state.cos[k].ai&&state.cos[k].ai.scenarios||[];const hit=[];
+  sc.forEach((x,i)=>{const p=clamp((+x.probabilite||2)/10,0.05,0.5);if(r()<p){hit.push(i);Object.entries(x.impacts||{}).forEach(([f,v])=>{if(f in s&&isFinite(+v))s[f]+=+v;});}});
+  return{s,hit};}
+function mcRun(k,force){
+  const N=state.mcN||1000,useAI=state.mcAI!==false,seed=state.mcSeed||2026;const b=yr(D(k),4);
+  const sig=JSON.stringify([N,useAI,seed,b,state.cos[k].hyp,(state.cos[k].ai&&state.cos[k].ai.scenarios)||[],state.fcOn]);
+  if(!force&&MC[k]&&MC[k].sig===sig)return MC[k];
+  const r=RNG(seed+k.length*131);const Z=[],E=[],NT=[],CV=[],hits={};
+  DMEMO={};DMEMO[k]=D(k);
+  try{for(let i=0;i<N;i++){const {s,hit}=mcDraw(r,k,useAI);hit.forEach(h=>hits[h]=(hits[h]||0)+1);const st=withScen(s,()=>stress(k));Z.push(st.zs);E.push(st.ebit);NT.push(st.net);CV.push(st.cov);}}
+  finally{DMEMO=null;}
+  const q=(a,p)=>{const v=a.filter(isFinite).sort((x,y)=>x-y);return v.length?v[Math.min(v.length-1,Math.floor(p*v.length))]:NaN;};
+  const fr=(a,f)=>a.filter(f).length/N;
+  MC[k]={sig,N,Z,pDist:fr(Z,z=>z<1.23),pGrey:fr(Z,z=>z>=1.23&&z<2.9),pLoss:fr(NT,v=>v<0),pCov:fr(CV,v=>v<1.5),z5:q(Z,.05),z50:q(Z,.5),z95:q(Z,.95),e5:q(E,.05),e50:q(E,.5),hits,zb:altman(b)};
+  return MC[k];}
+function mcHist(M,c){const zs=M.Z.filter(isFinite).sort((a,b)=>a-b),W=300,H=130,lo=Math.floor(Math.min(0,zs[Math.floor(zs.length*.01)]||0,isFinite(M.zb)?M.zb:0)),hi=Math.ceil(Math.max(3.5,zs[Math.floor(zs.length*.99)]||0)),nb=24,bw=(hi-lo)/nb,cnt=Array(nb).fill(0);M.Z.forEach(z=>{if(!isFinite(z))return;const i=Math.max(0,Math.min(nb-1,Math.floor((z-lo)/bw)));cnt[i]++;});
+  const mx=Math.max(1,...cnt),x0=8,pw=(W-16)/nb,sx=z=>x0+(z-lo)/(hi-lo)*(W-16),sy=v=>H-22-v/mx*(H-34);
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:460px;display:block;margin:0 auto" role="img" aria-label="Distribution du Z' simulé">`;
+  cnt.forEach((v,i)=>{const z=lo+(i+.5)*bw,cz=z<1.23?"var(--crit, #b42318)":z<2.9?"var(--warn, #b7791f)":"var(--good, #1f7a4d)";s+=`<rect x="${x0+i*pw+1}" y="${sy(v)}" width="${pw-2}" height="${sy(0)-sy(v)}" fill="${cz}" fill-opacity=".7" rx="1.5"/>`;});
+  [1.23,2.9].forEach(t=>{s+=`<line x1="${sx(t)}" x2="${sx(t)}" y1="8" y2="${H-22}" stroke="var(--ink)" stroke-dasharray="3 3"/><text x="${sx(t)+3}" y="16" font-size="9">${String(t).replace(".",",")}</text>`;});
+  [...Array(hi-lo+1).keys()].map(i=>lo+i).filter((t,i,a)=>a.length<=9||t%2===0).forEach(t=>{s+=`<text x="${sx(t)}" y="${H-8}" font-size="9" text-anchor="middle">${t}</text>`;});
+  if(isFinite(M.zb))s+=`<circle cx="${sx(Math.max(lo,Math.min(hi,M.zb)))}" cy="${H-22}" r="4" fill="${c}"/>`;
+  return s+"</svg>";}
+function renderMC(){
+  const box=document.getElementById("mc-card");if(!box||!keys().length)return;
+  const N=state.mcN||1000,useAI=state.mcAI!==false;
+  const R=keys().map(k=>[k,mcRun(k)]);
+  box.innerHTML=`<div class="section-head"><h3>CrashTest Monte-Carlo : ${fmt(N)} années ${YL(4)} simulées</h3>
+    <div class="actions"><label class="small" style="display:inline-flex;gap:6px;align-items:center">Simulations<select id="mc-n"><option>500</option><option>1000</option><option>5000</option></select></label>
+    <label class="small" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="mc-ai" ${useAI?"checked":""}> Inclure les risques spécifiques de l'IA</label>
+    <button class="btn small" id="mc-run">Relancer (nouveau tirage)</button><button class="btn small" data-csv="mc">Données CSV</button></div></div>
+  <p class="small">Au lieu d'une seule crise, RiskScope tire au hasard tous les facteurs à la fois (pétrole, dollar, demande, fret, carbone, taux, coûts, charge exceptionnelle${useAI?", plus les risques spécifiques proposés par l'IA selon leur probabilité":""}) et recalcule les comptes ${YL(4)} à chaque tirage. Le curseur de crise actif n'est pas utilisé ici.</p>
+  <div class="grid3" style="margin-top:10px">${R.map(([k,M])=>{const z=M.pDist>=.5?"crit":M.pDist>=.2||M.pGrey>=.5?"warn":"good";return `<div class="card co" style="--co:${col(k)}"><div class="co-head"><span class="co-name">${esc(state.cos[k].name)}</span>${pill(z,M.pDist<.2&&M.pGrey>=.5?`Zone grise : ${pct(M.pGrey,0)}`:`Détresse : ${pct(M.pDist,0)}`)}</div>
+    ${mcHist(M,col(k))}
+    <div class="row"><span>Probabilité de zone de détresse (Z' &lt; 1,23)</span><span class="num"><b>${pct(M.pDist,0)}</b></span></div>
+    <div class="row"><span>Probabilité de zone grise</span><span class="num">${pct(M.pGrey,0)}</span></div>
+    <div class="row"><span>Probabilité de perte nette</span><span class="num">${pct(M.pLoss,0)}</span></div>
+    <div class="row"><span>Couverture des intérêts &lt; 1,5</span><span class="num">${pct(M.pCov,0)}</span></div>
+    <div class="row"><span>Z' : pessimiste / médian / optimiste</span><span class="num">${fmt(M.z5,2)} / ${fmt(M.z50,2)} / ${fmt(M.z95,2)}</span></div>
+    <div class="row"><span>Résultat d'exploitation dans 5 % des cas les pires</span><span class="num">${fmt(M.e5)}</span></div></div>`;}).join("")}</div>
+  <details style="margin-top:8px"><summary class="small">Hypothèses de la simulation</summary><table style="margin-top:6px"><tbody>${MC_DIST.map(([,l,d])=>`<tr><td>${l}</td><td class="small">${d}</td></tr>`).join("")}${useAI?`<tr><td>Risques spécifiques (IA)</td><td class="small">chaque scénario survient avec une probabilité de 10 % à 50 % selon sa note de 1 à 5, et ajoute ses impacts</td></tr>`:""}</tbody></table><p class="small">Ordres de grandeur pédagogiques : ajustez les hypothèses de sensibilité de chaque société dans Données.</p></details>
+  ${interp(R.map(([k,M])=>`${esc(state.cos[k].name)} passe en zone de détresse dans ${pct(M.pDist,0)} des ${YL(4)} simulées${M.pLoss>0.5?` et termine en perte dans ${pct(M.pLoss,0)} des cas`:""}`).join(" ; ")+". Une probabilité de détresse supérieure à 20 % est un indicateur de doute sur la continuité d'exploitation à documenter (voir Mission).")}`;
+  const n=document.getElementById("mc-n");n.value=String(N);n.onchange=()=>{state.mcN=+n.value;save();renderMC();renderGC();};
+  document.getElementById("mc-ai").onchange=e=>{state.mcAI=e.target.checked;save();renderMC();renderGC();};
+  document.getElementById("mc-run").onclick=()=>{state.mcSeed=Math.floor(Math.random()*1e9)+1;save();renderMC();renderGC();};
+}
+
+/* ---------- 4. Continuité d'exploitation (ISA 570) ---------- */
+const GC_MAN=["Perte d'un client, d'un fournisseur ou d'un marché majeur","Emprunts arrivant à échéance sans perspective de renouvellement, ou covenants non respectés","Litiges, amendes ou sanctions pouvant entraîner des montants importants","Départ de dirigeants clés sans remplacement","Dépendance à un soutien financier de l'actionnaire ou du groupe","Retards de paiement des dettes fiscales, sociales ou fournisseurs"];
+function gcAuto(k){const d=RD(k),b=yr(d,4),p=yr(d,3),f=yr(D(k),4),st=withScen(ZERO,()=>stress(k)),M=mcRun(k);
+  const z=altman(f),cov=f.interest>0?f.ebit/f.interest:Infinity,liq=f.cl?f.ca_cur/f.cl:NaN,gear=f.equity>0?f.ltd/f.equity:Infinity;
+  return[
+   ["Pertes nettes sur les deux derniers exercices publiés",b.net<0&&p.net<0,`${fmt(p.net)} puis ${fmt(b.net)}`],
+   ["Capitaux propres négatifs ou en baisse de plus de 25 % sur un an",b.equity<=0||(p.equity>0&&b.equity/p.equity-1<-0.25),`${fmt(p.equity)} → ${fmt(b.equity)}`],
+   ["Flux de trésorerie d'exploitation négatif",b.cfo<0,fmt(b.cfo)],
+   [`Altman Z' en zone de détresse (${YL(4)})`,z<1.23,fmt(z,2)],
+   ["Couverture des intérêts inférieure à 1,5",cov<1.5,isFinite(cov)?fmt(cov,1)+"×":"pas d'intérêts"],
+   ["Liquidité générale inférieure à 1",liq<1,fmt(liq,2)],
+   ["Endettement long terme supérieur aux capitaux propres",gear>1,isFinite(gear)?fmt(gear,2):"capitaux propres ≤ 0"],
+   [`Probabilité de détresse Monte-Carlo supérieure à 20 %`,M.pDist>0.2,pct(M.pDist,0)]].map(([l,v,x])=>({l,v:!!v,x}));}
+function gcEval(k){const m=state.cos[k].mission;m.gc=m.gc||[];const A=gcAuto(k),na=A.filter(x=>x.v).length,nm=GC_MAN.filter((_,i)=>m.gc[i]).length,tot=na+nm;
+  const sev=A[0].v&&A[3].v;const lvl=tot>=5||(sev&&tot>=4)?3:tot>=2?2:1;return{A,na,nm,tot,lvl};}
+const GC_C=["","Pas d'indice de doute significatif","Événements susceptibles de créer un doute : procédures complémentaires","Incertitude significative probable sur la continuité"];
+function renderGC(){
+  const box=document.getElementById("gc-card");if(!box||!keys().length)return;const k=ui.missionCo,co=state.cos[k],m=co.mission,G=gcEval(k);
+  box.innerHTML=`<div class="section-head"><h3>Continuité d'exploitation (ISA 570) : ${esc(co.name)}</h3>${pill(["","good","warn","crit"][G.lvl],GC_C[G.lvl])}</div>
+  <div class="grid2" style="margin-top:8px"><div><p class="small"><b>Indicateurs financiers</b> (calculés automatiquement)</p>
+    ${G.A.map(x=>`<div class="row"><span>${x.v?"⚠️":"✓"} ${x.l}</span><span class="num">${x.x}</span></div>`).join("")}</div>
+    <div><p class="small"><b>Indicateurs à vérifier</b> (entretiens, procès-verbaux, contrats)</p>
+    ${GC_MAN.map((l,i)=>`<label class="row" style="cursor:pointer"><span><input type="checkbox" data-gc="${i}" ${m.gc[i]?"checked":""}> ${l}</span></label>`).join("")}</div></div>
+  ${interp(`${G.tot} indicateur(s) sur ${G.A.length+GC_MAN.length} (${G.na} financier(s), ${G.nm} déclaré(s)). ${G.lvl===1?"Rien ne remet en cause l'hypothèse de continuité : documenter cette appréciation et rester attentif aux événements postérieurs.":G.lvl===2?"Procédures complémentaires (ISA 570.16) : obtenir les prévisions de trésorerie sur 12 mois, analyser les plans de la direction, confirmer les financements disponibles et revoir les événements postérieurs à la clôture.":"Si les mesures de la direction ne lèvent pas le doute : vérifier l'information en annexe et ajouter dans le rapport un paragraphe « Incertitude significative liée à la continuité d'exploitation » (ISA 570.22), voire une opinion modifiée si l'information est insuffisante."}`)}
+  <div class="exp"><button class="btn small" data-csv="gc">Données CSV</button></div>`;
+  box.querySelectorAll("[data-gc]").forEach(c=>c.onchange=()=>{m.gc[+c.dataset.gc]=c.checked;saveCo(k);renderGC();});
+}
+
+/* ---------- Exports CSV ---------- */
+CSV.je=()=>{const k=wkCo("jeCo"),T=jeTests(k);if(!T)return[["Aucun grand livre importé"]];return[["Score","Date","Compte","Intitulé du compte","Libellé","Montant","Utilisateur","Pièce","Tests"],...T.flagged.map(x=>[x.s,fmtD(x.r.d),x.r.acc,x.r.accLib,x.r.lib,x.r.amt,x.r.user,x.r.piece,x.f.map(id=>JE_T.find(t=>t[0]===id)[1]).join(" ; ")])];};
+CSV.sample=()=>{const k=ui.missionCo,S=sampCalc(k);return[["Population",S.s.pop==="je"?"Grand livre, comptes "+S.s.prefix:S.s.pop],["Valeur (M)",S.bv],["Confiance (%)",S.s.conf],["Erreur tolérable (M)",S.tm],["Erreur attendue (M)",S.ee],["Taille",S.n],["Intervalle (M)",S.J],[],["N°","Date","Compte","Libellé","Montant","Point tiré (M)"],...(S.sel||[]).map((x,i)=>[i+1,fmtD(x.it.d),x.it.acc,x.it.lib,x.it.amt,x.pt])];};
+CSV.ra520=()=>{const k=ui.missionCo,{P}=raRows(k),RY=realYears(k),m=state.cos[k].mission;return[["Poste",RY[3],RY[4],"Variation","Variation %","Significative","Explication"],...P.map(x=>[x.l,x.a,x.b,x.dv,x.dp,x.sig?"oui":"non",(m.raExp||{})[x.f]||""])];};
+CSV.gc=()=>{const k=ui.missionCo,G=gcEval(k),m=state.cos[k].mission;return[["Indicateur","Présent","Valeur"],...G.A.map(x=>[x.l,x.v?"oui":"non",x.x]),...GC_MAN.map((l,i)=>[l,m.gc[i]?"oui":"non",""]),[],["Conclusion",GC_C[G.lvl]]];};
+CSV.mc=()=>[["Société","Simulations","P(détresse)","P(zone grise)","P(perte nette)","P(couverture<1,5)","Z' P5","Z' médian","Z' P95","EBIT P5"],...keys().map(k=>{const M=mcRun(k);return[state.cos[k].name,M.N,M.pDist,M.pGrey,M.pLoss,M.pCov,M.z5,M.z50,M.z95,M.e5];})];
+
 /* ---------- Bibliothèque d'analyses (historique) ---------- */
 const libKeys=()=>Object.keys(state.cos).sort((a,b)=>(state.cos[b].updatedAt||0)-(state.cos[a].updatedAt||0));
 const ZERO={oil:0,fx:0,demand:0,log:0,carbon:0,rate:0,cost:0,oneoff:0};
+EXAMPLE.braskem={name:"Braskem",country:"Brésil",cur:"MR$",data:{
+  ca:[105625,96519,70569,77411,70717],cogs:[73568,85161,67548,71414,69161],sga:[4875,5246,4771,5093,5142],dep:[4178,4733,5206,4950,4673],
+  ebit:[26043,4272,-2792,-1079,-1807],interest:[4903,5066,5589,6853,6802],net:[13962,-821,-4890,-12052,-10961],cfo:[14786,8952,-2272,2435,-4200],
+  rec:[7154,3232,2910,3562,3455],inv:[16335,14030,12532,13688,10421],ca_cur:[39293,34457,37441,37037,30448],ppe:[37225,37763,38405,40417,37579],
+  ta:[92564,88049,91741,101575,81879],cl:[25194,24186,24494,28272,40218],ltd:[45917,44836,50718,65231,45356],equity:[6204,6108,3279,-4278,-16502],re:[3484,1826,-2738,-14034,-23902]},
+  hyp:{rawShare:.75,pass:.50,salesFx:.60,costFx:.80,co2:10,co2exp:.05,eur:6.3,debt:66128,float:.30,sea:.40,tax:.34}};
+EXAMPLE.braskem.sector="Pétrochimie (PE, PP, PVC)";
+EXAMPLE.braskem.env={eco:"Surcapacités chinoises et américaines en PE, PP et PVC : spreads au plus bas, usines sous-utilisées. EBITDA récurrent 2025 en baisse de 45 %, flux d'exploitation négatif.",reg:"Affaire de Maceió (Alagoas) : affaissement de sols lié à l'extraction de sel, coûts supérieurs à 7 Md R$, enquête de la CVM. Procédure de restructuration extrajudiciaire au Brésil (août 2026) et Chapter 15 aux États-Unis.",geo:"Naphta et éthane achetés en dollars, dette à 92 % en devises. Filiale mexicaine Braskem Idesa en Chapter 11 (août 2026). Contrôle partagé depuis juin 2026 entre IG4 Capital et Petrobras.",audit:"Continuité d'exploitation : incertitude significative signalée par l'auditeur (KPMG) sur les comptes 2025"};
+EXAMPLE.braskem.src=["États financiers consolidés 2025 (comparatif 2024) publiés par Braskem ; formulaires 20-F 2022 et 2023 (SEC) pour 2021 à 2023.","Frais commerciaux et généraux = ventes et distribution + administration + R&D. Dettes long terme = emprunts et débentures non courants + emprunts non courants de Braskem Idesa. Réserves = réserves de profits (2021-2022), puis pertes accumulées. Résultat net total, y compris minoritaires. Montants en millions de reais (MR$)."];
+
+/* ---------- Analyses préparées par l'équipe (démonstration, novembre 2026) ---------- */
+const S_=(nom,description,probabilite,impacts)=>({nom,description,probabilite,impacts:{...ZERO,...impacts}});
+const P_=(titre,detail,compte)=>({titre,detail,compte});
+const PREP={
+ snep:{fc:{g:.04,m:-.06,why:"Hypothèse de l'équipe : volumes soutenus par les droits antidumping et la montée en cadence des nouvelles unités, mais prix du PVC encore bas ; marge toujours négative."},
+  hypJust:"Éthylène importé (environ 55 % du coût des ventes), achats en dollars, dette bancaire surtout à taux variable.",
+  scenarios:[S_("Révision des droits antidumping","Baisse ou suppression des droits sur le PVC importé : retour des importations à bas prix.",2,{demand:12}),
+   S_("Rupture d'approvisionnement en éthylène","Éthylène importé par voie maritime : retard ou surcoût logistique, arrêts de production.",3,{log:20,cost:6,demand:5}),
+   S_("Hausse du prix de l'éthylène","Matière première alignée sur le pétrole et le marché mondial, faible capacité de répercussion.",3,{oil:30}),
+   S_("Durcissement des conditions bancaires","Pertes répétées : crédits de trésorerie plus chers ou réduits.",3,{rate:150}),
+   S_("Démarrage difficile des nouvelles unités PVC","Rendements inférieurs au plan : surcoûts et risque de dépréciation.",3,{cost:5,oneoff:2})],
+  points:[P_("Continuité d'exploitation","Trois exercices de pertes (−56,8 ; −74,6 ; −192,5 MDH) et flux d'exploitation négatif en 2025 : obtenir les prévisions de trésorerie sur 12 mois et les lignes bancaires confirmées.","Ensemble des états"),
+   P_("Dépréciation des nouvelles unités","572,5 MDH d'immobilisations nettes : test de valeur des unités mises en service, comparaison du plan d'affaires avec les réalisations 2025-2026.","Immobilisations"),
+   P_("Valeur des stocks","Prix du PVC bas : vérifier que la valeur nette de réalisation des 202 MDH de stocks reste supérieure au coût.","Stocks"),
+   P_("Recouvrement des créances","Créances de 317,7 MDH, soit environ 155 jours de chiffre d'affaires : circularisation, balance âgée, dépréciations.","Créances clients"),
+   P_("Liquidité à court terme","Passif circulant (965 MDH) supérieur à l'actif circulant (625 MDH) : échéancier des dettes, respect des covenants.","Dettes")],
+  raExp:{ca:"[Préparé, à confirmer] Hausse des volumes après la protection antidumping et la montée en cadence des nouvelles capacités ; analyse prix/volume à obtenir.",
+   cogs:"[Préparé, à confirmer] Coûts en hausse plus vite que les ventes (+21 % contre +18 %) : sous-absorption des nouvelles unités et prix de l'éthylène.",
+   dep:"[Préparé, à confirmer] Année pleine d'amortissement des unités mises en service.",
+   ebit:"[Préparé, à confirmer] Effet ciseau prix/coûts et amortissements ; vérifier les dotations et reprises de provisions.",
+   net:"[Préparé, à confirmer] Résultat d'exploitation dégradé et frais financiers en hausse.",
+   cfo:"[Préparé, à confirmer] Perte d'exploitation non compensée par le besoin en fonds de roulement.",
+   cl:"[Préparé, à confirmer] Financement par crédits de trésorerie et dettes fournisseurs : vérifier l'échéancier.",
+   interest:"[Préparé, à confirmer] Hausse de l'endettement à court terme et des taux.",
+   ltd:"[Préparé, à confirmer] Remboursement d'échéances d'emprunts.",
+   re:"[Préparé, à confirmer] Report à nouveau de la perte 2024.",
+   equity:"[Préparé, à confirmer] Effet de la perte de l'exercice."},
+  gc:[false,false,false,false,false,false]},
+ arkema:{fc:{g:.01,m:.05,why:"Hypothèse de l'équipe : demande atone en Europe et aux États-Unis, effet du plan d'économies et fin des charges exceptionnelles de 2025."},
+  hypJust:"Un tiers des ventes en Amérique du Nord ; matières premières pétrochimiques ; 1,9 Mt de CO₂ dont la moitié sous quotas européens.",
+  scenarios:[S_("Durcissement du dossier PFAS","Contentieux et dépollution autour de Pierre-Bénite (assignation de janvier 2026) : provisions supplémentaires.",3,{oneoff:2,cost:2}),
+   S_("Dollar faible prolongé","Les ventes en dollars valent moins en euros.",3,{fx:-10}),
+   S_("Énergie chère en Europe","Hausse du gaz et de l'électricité pour les sites européens.",3,{cost:6,oil:15}),
+   S_("Prix du carbone en hausse","Renchérissement des quotas européens.",3,{carbon:40}),
+   S_("Ralentissement automobile et construction","Baisse des volumes dans les adhésifs et les matériaux de performance.",3,{demand:6})],
+  points:[P_("Provisions environnementales et litiges PFAS","Site de Pierre-Bénite (Seveso seuil haut) : exhaustivité et évaluation des provisions, information en annexe.","Provisions"),
+   P_("Dépréciation des écarts d'acquisition","Acquisitions récentes dans les adhésifs et les matériaux (dont Ashland Performance Adhesives et PI Advanced Materials) : tests de valeur dans un contexte de demande faible.","Goodwill"),
+   P_("Chute du résultat net","Résultat net de 63 M€ en 2025 contre 354 M€ : identifier les éléments non récurrents (dépréciations, restructurations).","Résultat"),
+   P_("Change et couvertures","Un tiers des ventes en Amérique du Nord : comptabilité de couverture et effets de conversion.","Instruments financiers"),
+   P_("Quotas de CO₂","Comptabilisation des quotas et des droits à restituer.","Provisions")],
+  raExp:{ebit:"[Préparé, à confirmer] Baisse liée à la faiblesse de la demande, à l'effet change et à des charges non récurrentes.",
+   net:"[Préparé, à confirmer] Recul du résultat d'exploitation et hausse des frais financiers.",
+   interest:"[Préparé, à confirmer] Hausse du coût de la dette et du niveau d'endettement.",
+   ppe:"[Préparé, à confirmer] Effet change et dépréciations, investissements ralentis.",
+   inv:"[Préparé, à confirmer] Réduction des stocks (pilotage du besoin en fonds de roulement) et effet change.",
+   cfo:"[Préparé, à confirmer] Baisse des résultats en partie compensée par le besoin en fonds de roulement.",
+   equity:"[Préparé, à confirmer] Distribution de dividendes, écarts de conversion et faible résultat."},
+  gc:[false,false,true,false,false,false]},
+ dow:{fc:{g:-.02,m:.01,why:"Hypothèse de l'équipe : surcapacités persistantes, effet partiel des économies de coûts et des fermetures en Europe."},
+  hypJust:"Éthane américain avantageux ; 60 % des ventes hors États-Unis et Canada ; dette surtout à taux fixe.",
+  scenarios:[S_("Surcapacités asiatiques prolongées","Nouvelles capacités en Chine : prix du polyéthylène sous pression.",4,{demand:8}),
+   S_("Tensions commerciales et droits de douane","Mesures de rétorsion sur les exportations américaines.",3,{demand:5,fx:5}),
+   S_("Charges de restructuration supplémentaires","Nouvelles fermetures d'actifs en Europe.",3,{oneoff:2}),
+   S_("Hausse du prix de l'éthane et du gaz","Réduction de l'avantage de coût américain.",2,{oil:25}),
+   S_("Hausse des taux","Refinancement plus coûteux.",2,{rate:100})],
+  points:[P_("Restructuration et dépréciations","Programme de 1,1 à 1,5 Md$ et fermeture de trois actifs européens : provisions, dépréciations et information.","Provisions / immobilisations"),
+   P_("Perte de l'exercice 2025","Résultat net de −2 623 M$ : analyser les éléments non récurrents et la recouvrabilité des impôts différés.","Résultat"),
+   P_("Coentreprises au Moyen-Orient","Sadara et EQUATE (mise en équivalence) : tests de valeur et quote-part de résultat.","Participations"),
+   P_("Engagements de retraite","Hypothèses actuarielles sensibles aux taux.","Provisions"),
+   P_("Liquidité et dividende","Dividende réduit de 50 % ; flux d'exploitation de 1 032 M$ : suivi de la trésorerie et des covenants.","Trésorerie")],
+  raExp:{ca:"[Préparé, à confirmer] Prix de vente en baisse dans un marché en surcapacité.",
+   ebit:"[Préparé, à confirmer] Effondrement des marges et charges de restructuration.",
+   net:"[Préparé, à confirmer] Perte d'exploitation, charges de restructuration et effets fiscaux.",
+   cfo:"[Préparé, à confirmer] Baisse des marges.",
+   ltd:"[Préparé, à confirmer] Nouvelles émissions obligataires pour préserver la liquidité.",
+   cl:"[Préparé, à confirmer] Baisse des dettes fournisseurs avec le recul de l'activité.",
+   re:"[Préparé, à confirmer] Perte de l'exercice et dividendes versés."},
+  gc:[false,false,false,false,false,false]},
+ braskem:{fc:{g:-.05,m:-.03,why:"Hypothèse de l'équipe : spreads toujours bas, usines sous-utilisées, perturbations liées à la restructuration de la dette."},
+  hypJust:"Naphta et éthane achetés en dollars (environ 75 % du coût des ventes) ; prix de vente indexés sur le dollar ; 10 Mt de CO₂ environ (ordre de grandeur).",
+  scenarios:[S_("Échec de la restructuration extrajudiciaire","Rejet du plan par les créanciers, bascule en recuperação judicial : coûts juridiques, perte de clients et de fournisseurs.",3,{oneoff:5,rate:300,demand:5}),
+   S_("Spreads durablement bas","Surcapacités chinoises en PE, PP et PVC.",4,{demand:10}),
+   S_("Dépréciation du réal","Hausse du dollar : coûts et dette en devises renchéris.",3,{fx:15}),
+   S_("Nouvelles provisions à Maceió","Indemnisations et travaux supplémentaires en Alagoas.",3,{oneoff:3}),
+   S_("Hausse du naphta","Matière première alignée sur le pétrole.",3,{oil:25})],
+  points:[P_("Continuité d'exploitation","Incertitude significative signalée par l'auditeur : capitaux propres de −16,5 Md R$, passif courant supérieur à l'actif courant de 9,8 Md R$. Analyser le plan de restructuration et son information en annexe.","Ensemble des états"),
+   P_("Classement et restructuration des dettes","Défaut de Braskem Idesa et clauses de défaut croisé : reclassement en dettes courantes ; restructuration extrajudiciaire d'environ 10,9 Md US$.","Dettes financières"),
+   P_("Impôts différés actifs","Dépréciation de 11,1 Md R$ en 2025 : vérifier que le solde restant est recouvrable.","Impôts différés"),
+   P_("Dépréciation des actifs industriels","37,6 Md R$ d'immobilisations et filiale mexicaine en Chapter 11 : tests de valeur.","Immobilisations"),
+   P_("Provisions Maceió","Coûts déjà supérieurs à 7 Md R$ et enquête de la CVM : exhaustivité des provisions et des passifs éventuels.","Provisions"),
+   P_("Événements postérieurs et notations","Défaut noté par S&P (juin 2026) et Fitch (août 2026), changement de contrôle (IG4, Petrobras) : information sur les événements postérieurs.","Annexe")],
+  raExp:{ca:"[Préparé, à confirmer] Prix de vente plus bas dans un marché en surcapacité.",
+   inv:"[Préparé, à confirmer] Réduction des stocks pour préserver la trésorerie et baisse des prix.",
+   cfo:"[Préparé, à confirmer] Pertes d'exploitation et frais financiers payés.",
+   ca_cur:"[Préparé, à confirmer] Consommation de trésorerie et baisse des stocks.",
+   ppe:"[Préparé, à confirmer] Dépréciations et effet change sur les actifs à l'étranger.",
+   ta:"[Préparé, à confirmer] Dépréciation de 11,1 Md R$ des impôts différés actifs, baisse de la trésorerie et des stocks.",
+   cl:"[Préparé, à confirmer] Reclassement en courant des dettes de Braskem Idesa (défaut croisé).",
+   ltd:"[Préparé, à confirmer] Reclassement en courant des dettes de Braskem Idesa.",
+   equity:"[Préparé, à confirmer] Perte de 11 Md R$ portant les capitaux propres à −16,5 Md R$.",
+   re:"[Préparé, à confirmer] Perte de l'exercice imputée sur les pertes accumulées.",
+   net:"[Préparé, à confirmer] Dépréciation des impôts différés et frais financiers."},
+  gc:[false,true,true,false,true,false]}
+};
+const PREP_AT=Date.parse("2026-11-15T12:00:00Z");
+function applyPrep(k){const c=state.cos[k];if(!c||!c.exampleOf)return;const p=PREP[c.exampleOf];if(!p)return;
+  if(!c.ai)c.ai={year:CUR_YEAR,at:PREP_AT,src:"prep",scenarios:clone(p.scenarios),points:clone(p.points),prevision:{justification:p.fc.why},hypJust:p.hypJust};
+  if(!c.fcUser&&(!c.fc||c.fc.src!=="ia"))c.fc={g:p.fc.g,m:p.fc.m,src:"prep",why:p.fc.why};
+  c.mission=c.mission||defMission();c.mission.raExp=c.mission.raExp||{};
+  Object.entries(p.raExp).forEach(([f,t])=>{if(!(c.mission.raExp[f]||"").trim())c.mission.raExp[f]=t;});
+  if(!c.mission.gc||!c.mission.gc.length)c.mission.gc=p.gc.slice();
+  const ex=EXAMPLE[c.exampleOf];if(ex&&ex.env){c.env=c.env||defEnv();Object.entries(ex.env).forEach(([f,t])=>{if(!c.env[f])c.env[f]=t;});}
+  if(ex&&!c.src&&ex.src)c.src=ex.src;}
+const DEMO=["snep","arkema","dow","braskem"];
+function ensureDemo(){const ids=[];DEMO.forEach(x=>{const ex=EXAMPLE[x];let k=libKeys().find(q=>state.cos[q].exampleOf===x)||libKeys().find(q=>(state.cos[q].name||"").trim().toLowerCase()===ex.name.toLowerCase());
+    if(!k){const c=clone(ex);k=addCo({...c,exampleOf:x,lastYear:2025,sector:c.sector||"Chimie"},false);}else if(!state.cos[k].exampleOf){state.cos[k].exampleOf=x;}
+    applyPrep(k);ids.push(k);});return ids;}
+function autoDemo(n=0){if(window.claude&&window.claude.use&&STOREX.mode!=="db"&&n<10){setTimeout(()=>autoDemo(n+1),800);return;}
+  const ids=ensureDemo();if(!keys().length)openAnalyses(ids);else refreshAll();}
+function coList(){const L=libKeys(),d=DEMO.map(x=>L.find(k=>state.cos[k].exampleOf===x)).filter(Boolean);return[...d,...L.filter(k=>!d.includes(k)).sort((a,b)=>(state.cos[a].name||"").localeCompare(state.cos[b].name||""))];}
+function switchCo(dir){const L=coList();if(!L.length)return;const ks=keys();let i=ks.length===1?L.indexOf(ks[0]):-1;i=(i+dir+L.length)%L.length;if(ks.length!==1&&dir<0)i=L.length-1;openAnalyses([L[i]]);}
+document.addEventListener("keydown",e=>{if(e.altKey||e.ctrlKey||e.metaKey)return;const t=e.target;if(t&&(/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)||t.isContentEditable))return;const dk=document.getElementById("deck");if(dk&&dk.classList.contains("on"))return;if(document.querySelector("dialog[open]"))return;
+  if(e.key==="ArrowRight"){switchCo(1);e.preventDefault();}else if(e.key==="ArrowLeft"){switchCo(-1);e.preventDefault();}});
+
 const defEnv=()=>({eco:"",reg:"",geo:"",audit:""});
 const STOREX={mode:"local",db:null,canWrite:null,me:null,unsub:null,loaded:false,localOnly:[],pend:{}};
 function nextColor(){const used=libKeys().map(k=>state.cos[k].color);return PALETTE.find(c=>!used.includes(c))||PALETTE[libKeys().length%PALETTE.length];}
@@ -1394,10 +1838,10 @@ function addCo(co,open){const k=co.id||("co"+Date.now().toString(36)+Math.random
   if(STOREX.mode==="db")state.cos[k].createdBy=STOREX.me||"";
   saveCo(k);if(STOREX.mode==="db")writeCo(k);if(open)openAnalyses([k]);else refreshAll();return k;}
 function loadExample(which){
-  const ks=which==="all"?["snep","arkema","dow"]:[which];const ids=[];
+  const ks=which==="all"?["snep","arkema","dow","braskem"]:[which];const ids=[];
   ks.forEach(x=>{const ex=clone(EXAMPLE[x]);const existing=libKeys().find(k=>state.cos[k].exampleOf===x);if(existing){ids.push(existing);return;}
     ids.push(addCo({...ex,exampleOf:x,lastYear:2025,sector:ex.sector||"Chimie"},false));});
-  openAnalyses(ids);histMsg(ks.length>1?"Exemples chargés et ouverts en comparaison.":"Exemple chargé et ouvert.");
+  ids.forEach(applyPrep);openAnalyses(ids);histMsg(ks.length>1?"Exemples chargés et ouverts en comparaison.":"Exemple chargé et ouvert.");
 }
 function histMsg(t,err){const m=document.getElementById("hist-msg");if(!m)return;m.className="msg"+(err?" err":"");m.textContent=t;if(!err)setTimeout(()=>{if(m.textContent===t)m.textContent="";},5000);}
 
@@ -1428,10 +1872,13 @@ function renderHistory(){
 function renderOpenSection(){
   const ks=keys(),sec=document.getElementById("open-section");sec.hidden=!ks.length;
   const bar=document.getElementById("ctxbar");
-  if(!ks.length){bar.innerHTML=`<span class="small">Aucune analyse ouverte.</span> <a href="#accueil" class="small">Choisir dans l'historique</a>`;return;}
-  bar.innerHTML=`<span class="small">${ks.length>1?"Comparaison":"Analyse ouverte"} :</span> ${ks.map(k=>`<span class="chip" style="--co:${col(k)}">${esc(state.cos[k].name)}</span>`).join(" ")} <span class="small">${isFc(4)?`exercices ${YEARS[0]}–${YEARS[3]} + prévision ${CUR_YEAR}`:`exercice ${YL(4)}`}</span> <label class="small" style="display:inline-flex;gap:4px;align-items:center"><input type="checkbox" id="fc-toggle" ${state.fcOn!==false?"checked":""}> Prévision ${CUR_YEAR}</label> <button class="btn small" id="ctx-close">Fermer</button>`;
+  const L=coList().slice(0,8),one=ks.length===1?ks[0]:null;
+  const sw=L.length?`<span class="small"><b>Société :</b></span><div class="seg coswitch" role="group" aria-label="Changer de société">${L.map(k=>`<button data-sw="${k}" aria-pressed="${k===one}" style="--co:${col(k)}">${esc(state.cos[k].name)}</button>`).join("")}${L.length>1?`<button data-sw="__all" aria-pressed="${ks.length>1}">Comparer ${L.length>4?"les 4 premières":"toutes"}</button>`:""}</div>`:"";
+  const bindSw=()=>bar.querySelectorAll("[data-sw]").forEach(b=>b.onclick=()=>{const v=b.dataset.sw;openAnalyses(v==="__all"?L.slice(0,4):[v]);});
+  if(!ks.length){bar.innerHTML=sw+` <span class="small">Aucune analyse ouverte.</span> <a href="#accueil" class="small">Choisir dans l'historique</a>`;bindSw();return;}
+  bar.innerHTML=sw+` ${ks.length>1?`<span class="small">Comparaison :</span> ${ks.map(k=>`<span class="chip" style="--co:${col(k)}">${esc(state.cos[k].name)}</span>`).join(" ")}`:""} <span class="small">${isFc(4)?`exercices ${YEARS[0]}–${YEARS[3]} + prévision ${CUR_YEAR}`:`exercice ${YL(4)}`}</span> <label class="small" style="display:inline-flex;gap:4px;align-items:center"><input type="checkbox" id="fc-toggle" ${state.fcOn!==false?"checked":""}> Prévision ${CUR_YEAR}</label> <button class="btn small" id="ctx-close">Fermer</button>`;
   document.getElementById("fc-toggle").onchange=e=>{state.fcOn=e.target.checked;save();refreshAll();};
-  document.getElementById("ctx-close").onclick=closeAnalyses;
+  document.getElementById("ctx-close").onclick=closeAnalyses;bindSw();
   const yrs=new Set(ks.map(k=>state.cos[k].lastYear||2025));
   document.getElementById("open-title").textContent=ks.length>1?`Comparaison : ${ks.map(k=>state.cos[k].name).join(", ")}`:`Analyse : ${state.cos[ks[0]].name}`;
   const part=ks.filter(k=>FIELDS.some(([f])=>[3,4].some(t=>state.cos[k].data[f][t]==null)));
@@ -1550,7 +1997,7 @@ function applyEmpty(){
 }
 
 function alertBar(t){const b=document.getElementById("ctxbar");const s=document.createElement("span");s.className="msg err";s.textContent=t;b.append(s);setTimeout(()=>s.remove(),5000);}
-function refreshAll(){ensureState();setYears();renderHistory();renderOpenSection();renderPdfSelect();renderOverview();renderMatrix();renderPlan();renderRadar();renderStress();renderRatios();renderMission();renderEnv();renderData();renderFcCard();renderAIBits();applyEmpty();setTimeout(autoAI,0);}
+function refreshAll(){ensureState();setYears();renderHistory();renderOpenSection();renderPdfSelect();renderOverview();renderMatrix();renderPlan();renderRadar();renderStress();renderRatios();renderMission();renderEnv();renderData();renderFcCard();renderAIBits();renderJE();renderMC();applyEmpty();setTimeout(autoAI,0);}
 document.getElementById("hist-template").onclick=()=>downloadTemplate();
 document.getElementById("hist-load").onclick=()=>loadExample(document.getElementById("hist-example").value);
 document.getElementById("hist-compare").onclick=()=>{openAnalyses([...histSel]);document.getElementById("open-section").scrollIntoView({behavior:"smooth"});};
@@ -1564,4 +2011,4 @@ function route(){
   document.querySelectorAll("nav.tabs a").forEach(a=>{if(a.dataset.tab===t)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current");});
 }
 window.addEventListener("hashchange",route);
-injectGuides();renderSliders();setupDataTools();refreshAll();route();setupAssistant();setupStore();setupTeam();
+injectGuides();renderSliders();setupDataTools();refreshAll();route();setupAssistant();setupStore();setupTeam();setTimeout(autoDemo,window.claude&&window.claude.use?1800:50);
